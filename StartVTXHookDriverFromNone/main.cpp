@@ -19,7 +19,7 @@ void UnloadDriver(IN PDRIVER_OBJECT drvObj)
 	if (devObj != NULL)
 	{
 		UNICODE_STRING symLinkName;
-		RtlInitUnicodeString(&symLinkName, L"\\DosDevices\\AMDVTDriver");
+		RtlInitUnicodeString(&symLinkName, L"\\DosDevices\\VTXDriver");
 		GlobalManager* pGlobalManager = (GlobalManager*)drvObj->DeviceObject->DeviceExtension;
 		//如果你在DriverEntry里面调用IoCreateSymbolicLink的话加上这句
 		//因为你在DriverEntry里面使用的常量跟着DriverEntry一起卸载了
@@ -27,7 +27,7 @@ void UnloadDriver(IN PDRIVER_OBJECT drvObj)
 		IoDeleteDevice(devObj);
 		CallDestroyer(pGlobalManager);
 	}
-	KdPrint(("AMD-V driver has exited\n"));
+	KdPrint(("VT-X driver has exited\n"));
 }
 
 #pragma code_seg("INIT")
@@ -50,12 +50,12 @@ extern "C" NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 	GlobalManager* pGlobalManager = NULL;
 	UNICODE_STRING devName;
 	UNICODE_STRING symLinkName;
-	RtlInitUnicodeString(&devName, L"\\Device\\AMDVTDriver");
-	RtlInitUnicodeString(&symLinkName, L"\\DosDevices\\AMDVTDriver");
+	RtlInitUnicodeString(&devName, L"\\DosDevices\\VTXDriver");
+	RtlInitUnicodeString(&symLinkName, L"\\DosDevices\\VTXDriver");
 
 	do
 	{
-		KdPrint(("DriverEntry(): Starting AMD-V Driver\n"));
+		KdPrint(("DriverEntry(): Starting VT-X Driver\n"));
 
 		status = IoCreateDevice(pDriverObject, sizeof(GlobalManager), &devName, FILE_DEVICE_UNKNOWN,
 			0, TRUE, &fdo);
@@ -79,13 +79,13 @@ extern "C" NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 		initStep = 3;
 
 		fdo->Flags |= DO_BUFFERED_IO;
-		KdPrint(("DriverEntry(): AMD-V Driver Start successfully.\n"));
+		KdPrint(("DriverEntry(): VT-X Driver Start successfully.\n"));
 	} while (0);
 
 	if (!NT_SUCCESS(status))
 	{
 		CHAR errorInfo[100] = {};
-		sprintf(errorInfo, "DriverEntry(): AMD-V Driver Init Err, Step: %d, Code: %x\n", initStep, status);
+		sprintf(errorInfo, "DriverEntry(): VT-X Driver Init Err, Step: %d, Code: %x\n", initStep, status);
 		KdPrint((errorInfo));
 		switch (initStep)
 		{
