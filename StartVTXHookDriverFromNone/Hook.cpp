@@ -451,8 +451,11 @@ NTSTATUS EptHookManager::AddHookInSignleCore(const EptHookRecord& record, UINT32
 		corePageTableManager1.ChangePageTableEntryPermession(pOriginPhyAddr, permission, 1);
 	}
 
-	corePageTableManager1.UpdateMemoryType();
-	corePageTableManager2.UpdateMemoryType();
+	MtrrData mtrrs = ReadMtrrData();
+	MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(mtrrs);
+
+	corePageTableManager1.UpdateMemoryType(mtrrs, cache);
+	corePageTableManager2.UpdateMemoryType(mtrrs, cache);
 
 	return status;
 }
@@ -566,8 +569,11 @@ NTSTATUS EptHookManager::RemoveHookInSignleCore(PVOID pHookOriginVirtAddr, UINT3
 
 	} while (false);
 
-	corePageTableManager1.UpdateMemoryType();
-	corePageTableManager2.UpdateMemoryType();
+	MtrrData mtrrs = ReadMtrrData();
+	MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(mtrrs);
+
+	corePageTableManager1.UpdateMemoryType(mtrrs, cache);
+	corePageTableManager2.UpdateMemoryType(mtrrs, cache);
 
 	return status;
 }
@@ -588,8 +594,11 @@ bool EptHookManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, GenericR
 
 		if (!cr0.fields.cacheDisable)
 		{
-			(pageTableManager1.GetCoreEptPageTables() + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType();
-			(pageTableManager2.GetCoreEptPageTables() + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType();
+			MtrrData mtrrs = ReadMtrrData();
+			MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(mtrrs);
+
+			(pageTableManager1.GetCoreEptPageTables() + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(mtrrs, cache);
+			(pageTableManager2.GetCoreEptPageTables() + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(mtrrs, cache);
 		}
 
 		EPT_CTX ctx = {};

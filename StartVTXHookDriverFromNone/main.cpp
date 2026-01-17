@@ -50,7 +50,7 @@ extern "C" NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 	GlobalManager* pGlobalManager = NULL;
 	UNICODE_STRING devName;
 	UNICODE_STRING symLinkName;
-	RtlInitUnicodeString(&devName, L"\\DosDevices\\VTXDriver");
+	RtlInitUnicodeString(&devName, L"\\Device\\VTXDriver");
 	RtlInitUnicodeString(&symLinkName, L"\\DosDevices\\VTXDriver");
 
 	do

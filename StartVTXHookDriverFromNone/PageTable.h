@@ -132,6 +132,154 @@ struct MtrrData {
 
 MtrrData ReadMtrrData();
 
+//MTTR 内存内存类型MSR记录条目
+struct MtrrMemoryTypeRecord
+{
+	PTR_TYPE addressWithMask;
+	UINT8 type;
+#pragma code_seg()
+	MtrrMemoryTypeRecord() : addressWithMask(NULL), type(NULL) {}
+#pragma code_seg()
+	MtrrMemoryTypeRecord(PTR_TYPE _addressWithMask, UINT8 _type) : addressWithMask(_addressWithMask), type(_type) {}
+#pragma code_seg()
+	~MtrrMemoryTypeRecord() {}
+};
+
+//EPT页表记录器，记录所有封分配初始化的EPT页表的物理地址和虚拟地址
+//使用简单的哈希表实现，查询速度会快一些
+template<SIZE_TYPE bucketCnt>
+class MtrrMemoryTypeCacheBase
+{
+	KernelVector<MtrrMemoryTypeRecord, PT_TAG> data[bucketCnt];
+
+	static SIZE_TYPE GetBucketIdx(PTR_TYPE address)
+	{
+		return (address >> 12) % bucketCnt;
+	}
+
+public:
+#pragma code_seg()
+	MtrrMemoryTypeCacheBase() {}
+	//移动构造和拷贝
+#pragma code_seg()
+	MtrrMemoryTypeCacheBase(MtrrMemoryTypeCacheBase&& other)
+	{
+		*this = static_cast<MtrrMemoryTypeCacheBase&&>(other);
+	}
+#pragma code_seg()
+	MtrrMemoryTypeCacheBase& operator=(MtrrMemoryTypeCacheBase&& other)
+	{
+		if (&other != this)
+		{
+			for (SIZE_TYPE i = 0; i < bucketCnt; i++)
+				data[i] = static_cast<KernelVector<MtrrMemoryTypeRecord, PT_TAG>&&>(other.data[i]);
+		}
+		return *this;
+	}
+	//条目个数
+#pragma code_seg()
+	SIZE_TYPE Length() const
+	{
+		SIZE_TYPE result = 0;
+		for (auto& bucket : data)
+			result += bucket.Length();
+		return result;
+	}
+	//添加条目
+#pragma code_seg()
+	void PushBack(const MtrrMemoryTypeRecord& record)
+	{
+		data[GetBucketIdx(record.addressWithMask)].PushBack(record);
+	}
+	//通过物理地址寻找条目索引
+#pragma code_seg()
+	UINT8 FindMemoryTypeFromAddress(PTR_TYPE address) const
+	{
+		const KernelVector<MtrrMemoryTypeRecord, PT_TAG>& bucket = data[GetBucketIdx(address)];
+		for (SIZE_TYPE idx = 0; idx < bucket.Length(); ++idx)
+		{
+			if (!(bucket[idx].addressWithMask & address))
+				return bucket[idx].type;
+		}
+		return (UINT8)VTX_MEM_TYPE_INVALID;
+	}
+	//删除所有条目
+#pragma code_seg()
+	void Clear()
+	{
+		for (auto& bucket : data)
+			bucket.Clear();
+	}
+	//通过索引获取条目（只读）
+#pragma code_seg()
+	const MtrrMemoryTypeRecord& operator[](SIZE_TYPE idx) const
+	{
+		const KernelVector<MtrrMemoryTypeRecord, PT_TAG>* pBucket = NULL;
+		SIZE_TYPE cnt = 0;
+		for (auto& bucket : data)
+		{
+			if (cnt > idx)
+				break;
+			if (idx - cnt < bucket.Length())
+			{
+				pBucket = &bucket;
+				break;
+			}
+			cnt += bucket.Length();
+		}
+		if (pBucket == NULL)
+		{
+			__debugbreak();
+			KeBugCheck(MEMORY_MANAGEMENT);
+		}
+		return (*pBucket)[idx - cnt];
+	}
+	//通过索引获取条目（读写）
+#pragma code_seg()
+	MtrrMemoryTypeRecord& operator[](SIZE_TYPE idx)
+	{
+		KernelVector<MtrrMemoryTypeRecord, PT_TAG>* pBucket = NULL;
+		SIZE_TYPE cnt = 0;
+		for (auto& bucket : data)
+		{
+			if (cnt > idx)
+				break;
+			if (idx - cnt < bucket.Length())
+			{
+				pBucket = &bucket;
+				break;
+			}
+			cnt += bucket.Length();
+		}
+		if (pBucket == NULL)
+		{
+			__debugbreak();
+			KeBugCheck(MEMORY_MANAGEMENT);
+		}
+		return (*pBucket)[idx - cnt];
+	}
+	//通过物理地址删除条目
+#pragma code_seg()
+	bool RemoveByAddress(PTR_TYPE address)
+	{
+		SIZE_TYPE idx = GetBucketIdx(address);
+		KernelVector<MtrrMemoryTypeRecord, PT_TAG>& bucket = data[idx];
+		for (SIZE_TYPE i = 0; i < bucket.Length(); ++i)
+		{
+			if (bucket[i].addressWithMask == address)
+			{
+				bucket.Remove(i);
+				return true;
+			}
+		}
+		return false;
+	}
+};
+
+typedef MtrrMemoryTypeCacheBase<0x20> MtrrMemoryTypeCache;
+
+MtrrData ReadMtrrData();
+
 //分配的EPT页表记录条目
 struct PageTableRecord
 {
@@ -368,7 +516,7 @@ class CoreEptPageTableManager
 	PageTableRecords1 level1Records;
 	PageTableManager::EntrySetter* pEntrySetter;
 
-	void CoreEptPageTableManager::UpdateMemoryTypeSub(EptPageTable* pPsageTable, UINT32 level, const MtrrData& mtrrs);
+	void CoreEptPageTableManager::UpdateMemoryTypeSub(EptPageTable* pPsageTable, UINT32 level, const MtrrData& mtrrs, MtrrMemoryTypeCache& cache);
 
 public:
 	//删除默认构造
@@ -420,10 +568,12 @@ public:
 	//通过物理地址也页表级速寻找页表项虚拟地址
 	PVOID FindPageTableByPhyAddr(PTR_TYPE pa, UINT32 level) const;
 	//根据MTRR更新EPT页表的内存类型
-	void UpdateMemoryType();
+	void UpdateMemoryType(MtrrData mtrrs, MtrrMemoryTypeCache& cache);
 };
 
 //查询当前CR3（顶层页表）的虚拟地址
 void GetSysPXEVirtAddr(PTR_TYPE* pPxeOut, PTR_TYPE pxePhyAddr);
+
+MtrrMemoryTypeCache GenMtrrMemoryTypeCache(const MtrrData& mtrrs);
 
 #endif

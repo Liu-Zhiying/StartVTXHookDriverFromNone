@@ -18,13 +18,16 @@ void TestLStarHookCallback(GenericRegisters* pRegisters, PVOID param1, PVOID par
 	}
 }
 
-typedef PVOID(*P_ExAllocatePool2)(POOL_FLAGS Flags, SIZE_T NumberOfBytes, ULONG Tag);
-typedef PVOID(*P_ExAllocatePoolWithTag)(POOL_TYPE Flags, SIZE_T NumberOfBytes, ULONG Tag);
+typedef PVOID(NTAPI*P_ExAllocatePool2)(POOL_FLAGS Flags, SIZE_T NumberOfBytes, ULONG Tag);
+typedef PVOID(NTAPI*P_ExAllocatePoolWithTag)(POOL_TYPE Flags, SIZE_T NumberOfBytes, ULONG Tag);
+typedef NTSTATUS(NTAPI*P_ZwClose)(HANDLE handle);
 
 #pragma data_seg()
 P_ExAllocatePoolWithTag pFunctionCaller1 = NULL;
 #pragma data_seg()
 P_ExAllocatePool2 pFunctionCaller2 = NULL;
+#pragma data_seg()
+P_ZwClose pFunctionCaller3 = NULL;
 
 #pragma code_seg()
 PVOID NTAPI ExAllocatePoolWithTagHandler(POOL_TYPE PoolType, SIZE_T NumberOfBytes, ULONG Tag)
@@ -40,6 +43,12 @@ PVOID NTAPI ExAllocatePool2Handler(POOL_FLAGS Flags, SIZE_T NumberOfBytes, ULONG
 	PVOID result = pFunctionCaller2(Flags, NumberOfBytes, Tag);
 
 	return result;
+}
+
+#pragma code_seg()
+NTSTATUS NTAPI ZwCloseHandler(HANDLE handle)
+{
+	return pFunctionCaller3(handle);
 }
 
 #if defined(TEST_MSR_HOOK)
@@ -85,8 +94,19 @@ void GlobalManager::HookApi()
 	else
 		KdPrint(("GlobalManager::HookApi(): ExAllocatePool2 virtual address: %llx\n", (INT64)apiVirtAddr2));
 
+	//获取ExAllocatePool2的虚拟地址
+	RtlInitUnicodeString(&apiName, L"ZwClose");
+	PVOID apiVirtAddr3 = MmGetSystemRoutineAddress(&apiName);
+
+	if (apiVirtAddr3 == NULL)
+		KdPrint(("GlobalManager::HookApi(): ZwClose address not found!\n"));
+	else
+		KdPrint(("GlobalManager::HookApi(): ZwClose virtual address: %llx\n", (INT64)apiVirtAddr3));
+
 	//执行hook
 	EptHookRecord record = {};
+
+	/*
 
 	if (apiVirtAddr1 != NULL)
 	{
@@ -110,6 +130,20 @@ void GlobalManager::HookApi()
 		eptHookManager.AddHook(record);
 
 		KdPrint(("Hook ExAllocatePool2 OK!\n"));
+	}
+
+	*/
+
+	if (apiVirtAddr3 != NULL)
+	{
+		pFunctionCaller3 = (P_ZwClose)functionCallerManager.GetFunctionCaller(apiVirtAddr3);
+
+		record.pOriginVirtAddr = apiVirtAddr3;
+		record.pGotoVirtAddr = ZwCloseHandler;
+
+		eptHookManager.AddHook(record);
+
+		KdPrint(("Hook ZwClose OK!\n"));
 	}
 	
 #if defined(TEST_NPT_HOOK_REMOVE)

@@ -492,7 +492,6 @@ extern "C" void FillMachineFrame(MACHINE_FRAME& machineFrame, const GenericRegis
 {
 	UNREFERENCED_PARAMETER(guestRegistars);
 	UNREFERENCED_PARAMETER(virtCpuInfo);
-	UNREFERENCED_PARAMETER(machineFrame);
 	machineFrame = {};
 
 	PTR_TYPE value = 0;
@@ -517,11 +516,14 @@ extern "C" void VmExitHandler(VirtCpuInfo* pVirtCpuInfo, GenericRegisters* pGues
 	PTR_TYPE value = 0;
 
 	__vmx_vmread(GUEST_RIP, &value);
-	pGuestRegisters->rip = value;
+	if (value != NULL)
+		pGuestRegisters->rip = value;
 	__vmx_vmread(GUEST_RSP, &value);
-	pGuestRegisters->rsp = value;
+	if (value != NULL)
+		pGuestRegisters->rsp = value;
 	__vmx_vmread(GUEST_RFLAGS, &value);
-	pGuestRegisters->rflags = value;
+	if (value != NULL)
+		pGuestRegisters->rflags = value;
 
 	pGuestRegisters->extraInfo1 = 0;
 	pGuestRegisters->extraInfo2 = 0;
@@ -545,7 +547,7 @@ extern "C" void VmExitHandler(VirtCpuInfo* pVirtCpuInfo, GenericRegisters* pGues
 		pMsrHookPlugin->LoadGuestMsrForCpu(pVirtCpuInfo->otherInfo.cpuIdx);
 	}
 
-	if (!pVirtCpuInfo->regsBackup.genericRegisters1.extraInfo1)
+	if (!pGuestRegisters->extraInfo1)
 	{
 		__vmx_vmwrite(GUEST_RIP, pGuestRegisters->rip);
 		__vmx_vmwrite(GUEST_RSP, pGuestRegisters->rsp);
@@ -1110,12 +1112,13 @@ NTSTATUS VTXManager::EnterVirtualization()
 					__vmx_vmwrite(HOST_SYSENTER_EIP, __readmsr(IA32_MSR_SYSENTER_EIP));
 					__vmx_vmwrite(HOST_SYSENTER_ESP, __readmsr(IA32_MSR_SYSENTER_ESP));
 
-					__vmx_vmwrite(HOST_RSP, (PTR_TYPE)(pVirtCpuInfo[cpuIdx]->stack1 + sizeof pVirtCpuInfo[cpuIdx]->stack1 - sizeof(PTR_TYPE) * 2 - 0x40));
+					__vmx_vmwrite(HOST_RSP, (PTR_TYPE)(pVirtCpuInfo[cpuIdx]->stack1 + sizeof pVirtCpuInfo[cpuIdx]->stack1 - 0x50));
 					__vmx_vmwrite(HOST_RIP, (PTR_TYPE)VmEntry);
 
-					PTR_TYPE* pParams = (PTR_TYPE*)(pVirtCpuInfo[cpuIdx]->stack1 + sizeof pVirtCpuInfo[cpuIdx]->stack1 - sizeof(PTR_TYPE) * 2 - 0x40);
-					pParams[0] = (PTR_TYPE)&pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters1;
-					pParams[1] = (PTR_TYPE)pVirtCpuInfo[cpuIdx];
+					PTR_TYPE* pParams = (PTR_TYPE*)(pVirtCpuInfo[cpuIdx]->stack1 + sizeof pVirtCpuInfo[cpuIdx]->stack1 - 0x50);
+					pParams[0] = (PTR_TYPE)&pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters2;
+					pParams[1] = (PTR_TYPE)&pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters1;
+					pParams[2] = (PTR_TYPE)pVirtCpuInfo[cpuIdx];
 
 					pParams = (PTR_TYPE*)(pVirtCpuInfo[cpuIdx]->stack2 + sizeof pVirtCpuInfo[cpuIdx]->stack2 - sizeof(PTR_TYPE));
 					pParams[0] = (PTR_TYPE)&pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters2;

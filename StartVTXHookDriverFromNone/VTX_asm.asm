@@ -203,22 +203,23 @@ VmEntry Proc Frame
 .pushframe
 .allocstack 18h
 .endprolog
-mov [rsp + 10h], rax
+;备份rax寄存器
+mov [rsp + 18h], rax
 mov rax, [rsp]
 BACKUP_REGISTERS rax
-mov rax, [rsp + 10h]
+mov rax, [rsp + 18h]
 mov rcx, [rsp]
 mov [rcx + 170h], rax
 
 mov rax, rsp
-add rax, 18h
+add rax, 28h
 mov rcx, rax
 mov rdx, [rsp]
-mov r8, [rsp + 8h]
+mov r8, [rsp + 10h]
 
 ALLOC_STACK_AND_CALL FillMachineFrame, 28h
 
-mov rcx, [rsp + 8h]
+mov rcx, [rsp + 10h]
 mov rdx, [rsp]
 
 ALLOC_STACK_AND_CALL VmExitHandler, 28h
@@ -230,15 +231,23 @@ RESTORE_REGISTERS rax
 mov rax, [rsp]
 mov rax, [rax + 190h]
 test rax, rax
-mov rax, [rsp]
 ;如果这时候转到退出vmm的分支rax的值仍是&pVMMVirtCpuInfo->regsBackup.genericRegisters1
 jnz exit_virtualization
 
+mov rax, [rsp]
 push [rax + 170h]
 pop rax
 vmresume
 
+mov rax, [rsp]
+
+mov rcx, [rsp + 10h]
+mov rdx, [rsp]
+
+ALLOC_STACK_AND_CALL VmExitHandler, 28h
+
 exit_virtualization:
+mov rax, [rsp]
 ;切换到客户机栈
 mov rsp, [rax + 188h]
 ;push 客户机nRip

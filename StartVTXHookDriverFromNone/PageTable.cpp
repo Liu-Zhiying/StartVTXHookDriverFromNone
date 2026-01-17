@@ -30,58 +30,21 @@ MtrrData ReadMtrrData() {
 	return mtrrs;
 }
 
-UINT8 CalcMtrrMemTypeSub(const MtrrData& mtrrs, UINT64 const pfn)
+MtrrMemoryTypeCache GenMtrrMemoryTypeCache(const MtrrData& mtrrs)
 {
-	if (!mtrrs.defType.fields.mtrrEnable)
-		return VTX_MEM_TYPE_UNCACHEABLE;
+	MtrrMemoryTypeCache cache = {};
 
-	if (pfn < 0x100 && mtrrs.cap.fields.fixedRangeSupported
-		&& mtrrs.defType.fields.fixedRangeMtrrEnable) {
-		return VTX_MEM_TYPE_UNCACHEABLE;
+	for (UINT32 i = 0; i < mtrrs.varCount; ++i)
+	{
+		MtrrMemoryTypeRecord record = MtrrMemoryTypeRecord();
+
+		record.addressWithMask = mtrrs.variable[i].base.fields.pageFrameNumber & mtrrs.variable[i].mask.flelds.pageFrameNumber;
+		record.type = mtrrs.variable[i].base.fields.type;
+
+		cache.PushBack(record);
 	}
 
-	UINT8 currMemType = VTX_MEM_TYPE_INVALID;
-
-	for (UINT32 i = 0; i < mtrrs.varCount; ++i) {
-
-		if ((pfn & mtrrs.variable[i].mask.flelds.pageFrameNumber) == (mtrrs.variable[i].base.fields.pageFrameNumber & mtrrs.variable[i].mask.flelds.pageFrameNumber)) {
-			UINT8 type = mtrrs.variable[i].base.fields.type;
-
-			if (type == VTX_MEM_TYPE_UNCACHEABLE)
-				return VTX_MEM_TYPE_UNCACHEABLE;
-
-			if (type < currMemType)
-				currMemType = type;
-		}
-	}
-
-	if (currMemType == VTX_MEM_TYPE_INVALID)
-		return mtrrs.defType.fields.defaultMemoryType;
-
-	return currMemType;
-}
-
-UINT8 CalcMtrrMemType(const MtrrData& mtrrs, UINT64 address, UINT64 size) {
-	address &= ~0xFFFull;
-
-	size = (size + 0xFFF) & ~0xFFFull;
-
-	UINT8 currMemType = VTX_MEM_TYPE_INVALID;
-
-	for (UINT64 curr = address; curr < address + size; curr += 0x1000) {
-		auto const type = CalcMtrrMemTypeSub(mtrrs, curr >> 12);
-
-		if (type == VTX_MEM_TYPE_UNCACHEABLE)
-			return type;
-
-		if (type < currMemType)
-			currMemType = type;
-	}
-
-	if (currMemType == VTX_MEM_TYPE_INVALID)
-		return VTX_MEM_TYPE_UNCACHEABLE;
-
-	return currMemType;
+	return cache;
 }
 
 #pragma code_seg()
@@ -416,8 +379,11 @@ bool PageTableManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, Generi
 		CR0 cr0 = {};
 		__vmx_vmread(GUEST_CR0, &cr0.data);
 
+		MtrrData mtrrs = ReadMtrrData();
+		MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(mtrrs);
+
 		if (!cr0.fields.cacheDisable)
-			(corePageTables + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType();
+			(corePageTables + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(mtrrs, cache);
 
 		EPT_CTX ctx = {};
 		_invept(INV_ALL_CONTEXTS, &ctx);
@@ -480,7 +446,7 @@ bool PageTableManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegi
 	EPT_VIOLATION_DATA data = {};
 	__vmx_vmread(EXIT_QUALIFICATION, &data.AsUInt64);
 
-	if (data.Fields.Read || data.Fields.Execute)
+	if (!data.Fields.PTERead)
 	{
 		PTR_TYPE paStart = pa - pa % PAGE_SIZE;
 		PTR_TYPE paEnd = paStart + PAGE_SIZE;
@@ -494,6 +460,48 @@ bool PageTableManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegi
 
 		result = true;
 	}
+	else
+	{
+		auto fixPremission = [](const EPT_VIOLATION_DATA& data, EptEntry& entry) -> void
+		{
+			if (data.Fields.Write)
+				entry.fields.writeAccess = true;
+			if (data.Fields.Read)
+				entry.fields.readAccess = true;
+			if (data.Fields.Execute)
+				entry.fields.executeAccess = true;
+		};
+
+		auto getEptEntry = [&](const PTR_TYPE pa) -> EptEntry*
+		{
+			EptEntry* pEntry = NULL;
+			EptPageTable* eptPageTable = NULL;
+
+			eptPageTable = (EptPageTable*)corePageTables[pVirtCpuInfo->otherInfo.cpuIdx].FindPageTableByPhyAddr(pa, 2);
+
+			if (eptPageTable != NULL)
+				pEntry = &eptPageTable->entries[pa & 0x1ff];
+
+			eptPageTable = (EptPageTable*)corePageTables[pVirtCpuInfo->otherInfo.cpuIdx].FindPageTableByPhyAddr(pa, 1);
+
+			if (eptPageTable != NULL)
+				pEntry = &eptPageTable->entries[pa & 0x1ff];
+
+			return pEntry;
+		};
+
+		EptEntry* pEntry = getEptEntry(pa);
+
+		if (pEntry != NULL)
+		{
+			fixPremission(data, *pEntry);
+
+			result = true;
+		}
+	}
+
+	if (!result)
+		__debugbreak();
 
 	return result;
 }
@@ -572,13 +580,32 @@ PVOID CoreEptPageTableManager::FindPageTableByPhyAddr(PTR_TYPE guestPa, UINT32 l
 }
 
 #pragma code_seg()
-void CoreEptPageTableManager::UpdateMemoryTypeSub(EptPageTable* pPageTable, UINT32 level, const MtrrData& mtrrs)
+void CoreEptPageTableManager::UpdateMemoryTypeSub(EptPageTable* pPageTable, UINT32 level, const MtrrData& mtrrs, MtrrMemoryTypeCache& cache)
 {
 	for (SIZE_TYPE idx = 0; idx < GetArrayElementCnt(pPageTable->entries); ++idx)
 	{
 		if (level == 1 || pPageTable->entries[idx].fields.largePage)
 		{
-			pPageTable->entries[idx].fields.memoryType = CalcMtrrMemType(mtrrs, pPageTable->entries[idx].fields.pageFrameNumber << 12, 0x1000 << (9 * (level - 1)));
+			PTR_TYPE pfn = pPageTable->entries[idx].fields.pageFrameNumber << 12;
+
+			if (!mtrrs.defType.fields.mtrrEnable)
+			{
+				pPageTable->entries[idx].fields.memoryType = VTX_MEM_TYPE_UNCACHEABLE;
+				continue;
+			}
+
+			if (pfn < 0x100 && mtrrs.cap.fields.fixedRangeSupported && mtrrs.defType.fields.fixedRangeMtrrEnable)
+			{
+				pPageTable->entries[idx].fields.memoryType = VTX_MEM_TYPE_UNCACHEABLE;
+				continue;
+			}
+
+			UINT8 memoryType = cache.FindMemoryTypeFromAddress(pfn);
+
+			if (memoryType == VTX_MEM_TYPE_INVALID)
+				memoryType = mtrrs.defType.fields.defaultMemoryType;
+
+			pPageTable->entries[idx].fields.memoryType = memoryType;
 		}
 		else
 		{
@@ -592,17 +619,15 @@ void CoreEptPageTableManager::UpdateMemoryTypeSub(EptPageTable* pPageTable, UINT
 				pSubPageTable = (EptPageTable*)level3Records.FindVaFromPa(GET_PHYADDR_FROM_PFN(pPageTable->entries[idx].fields.pageFrameNumber));
 
 			if (pSubPageTable != (EptPageTable*)INVALID_ADDR)
-				UpdateMemoryTypeSub(pSubPageTable, level - 1, mtrrs);
+				UpdateMemoryTypeSub(pSubPageTable, level - 1, mtrrs, cache);
 		}
 	}
 }
 
 #pragma code_seg()
-void CoreEptPageTableManager::UpdateMemoryType()
+void CoreEptPageTableManager::UpdateMemoryType(MtrrData mtrrs ,MtrrMemoryTypeCache& cache)
 {
-	MtrrData mtrrs = ReadMtrrData();
-
-	UpdateMemoryTypeSub((EptPageTable*)pEptPageTableVa, 4, mtrrs);
+	UpdateMemoryTypeSub((EptPageTable*)pEptPageTableVa, 4, mtrrs, cache);
 }
 
 #pragma code_seg()
@@ -857,7 +882,12 @@ NTSTATUS CoreEptPageTableManager::BuildEptPageTable()
 	} while (false);
 
 	if (NT_SUCCESS(status))
-		UpdateMemoryType();
+	{
+		MtrrData mtrrs = ReadMtrrData();
+		MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(mtrrs);
+
+		UpdateMemoryType(mtrrs, cache);
+	}
 
 	return status;
 }
