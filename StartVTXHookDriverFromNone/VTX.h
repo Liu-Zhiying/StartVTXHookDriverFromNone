@@ -533,4 +533,6 @@ void JumpToNextInstruction(PTR_TYPE& rip);
 	__vmx_vmwrite(GUEST_RIP, (rip_val));																							\
 	__vmx_vmwrite(GUEST_RFLAGS, (rflags_val));																						\
 
+#define VIRTUAL_CPU_ID(physicalCpuId) (0x1000 + (physicalCpuId))
+
 #endif

@@ -192,6 +192,8 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 
 		EptHookData& data = hookData[cpuIdx];
 
+		EPT_TABLE_POINTER EPTP = {};
+
 		if (hookStatus.pLastActiveHookPageVirtAddr != NULL)
 		{
 			//根据虚拟地址查询交换页项目
@@ -225,8 +227,6 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			//切换到内部页表
 			tempPhyAddr = internalCorePageTableManager.GetEptPageTablePa();
 
-			EPT_TABLE_POINTER EPTP = {};
-
 			EPTP.Fields.PhysAddr = tempPhyAddr >> 12;
 			EPTP.Fields.PageWalkLength = 3;
 			EPTP.Fields.MemoryType = VTX_MEM_TYPE_UNCACHEABLE;
@@ -242,8 +242,6 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			//切换到外部页表
 			tempPhyAddr = externalCorePageTableManager.GetEptPageTablePa();
 
-			EPT_TABLE_POINTER EPTP = {};
-
 			EPTP.Fields.PhysAddr = tempPhyAddr >> 12;
 			EPTP.Fields.PageWalkLength = 3;
 			EPTP.Fields.MemoryType = VTX_MEM_TYPE_UNCACHEABLE;
@@ -255,6 +253,13 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			hookStatus.premissionStatus = EptHookStatus::PremissionStatus::HookPageNotExecuted;
 		}
 
+		EPT_CTX ctx = {};
+
+		ctx.PEPT = EPTP.AsUInt64;
+		ctx.High = VIRTUAL_CPU_ID(cpuIdx);
+
+		_invept(INV_SINGLE_CONTEXT, &ctx);
+
 		result = true;
 	}
 	else
@@ -263,8 +268,7 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			pageTableManager2.HandleEptViolation(pVirtCpuInfo, pGuestRegisters);
 	}
 
-	EPT_CTX ctx = {};
-	_invept(INV_ALL_CONTEXTS, &ctx);
+	
 
 	return result;
 }
@@ -601,9 +605,16 @@ bool EptHookManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, GenericR
 			(pageTableManager2.GetCoreEptPageTables() + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(mtrrs, cache);
 		}
 
-		EPT_CTX ctx = {};
-		_invept(INV_ALL_CONTEXTS, &ctx);
+		EPT_TABLE_POINTER EPTP = {};
 
+		__vmx_vmread(EPT_POINTER, &EPTP.AsUInt64);
+
+		EPT_CTX ctx = {};
+
+		ctx.PEPT = EPTP.AsUInt64;
+		ctx.High = VIRTUAL_CPU_ID(pVirtCpuInfo->otherInfo.cpuIdx);
+
+		_invept(INV_SINGLE_CONTEXT, &ctx);
 	}
 
 	return false;
@@ -642,13 +653,23 @@ NTSTATUS EptHookManager::RemoveHook(PVOID pHookOriginVirtAddr)
 
 	auto processor = [pHookOriginVirtAddr, this](UINT32 cpuIdx) -> NTSTATUS
 		{
-			return RemoveHookInSignleCore(pHookOriginVirtAddr, cpuIdx);
+			NTSTATUS status = RemoveHookInSignleCore(pHookOriginVirtAddr, cpuIdx);
+
+			EPT_TABLE_POINTER EPTP = {};
+
+			__vmx_vmread(EPT_POINTER, &EPTP.AsUInt64);
+
+			EPT_CTX ctx = {};
+
+			ctx.PEPT = EPTP.AsUInt64;
+			ctx.High = VIRTUAL_CPU_ID(cpuIdx);
+
+			_invept(INV_SINGLE_CONTEXT, &ctx);
+
+			return status;
 		};
 
 	NTSTATUS status = RunOnEachCore(0, KeQueryMaximumProcessorCountEx(ALL_PROCESSOR_GROUPS), processor);
-
-	EPT_CTX ctx = {};
-	_invept(INV_ALL_CONTEXTS, &ctx);
 
 	return status;
 }

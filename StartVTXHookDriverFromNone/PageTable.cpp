@@ -385,8 +385,16 @@ bool PageTableManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, Generi
 		if (!cr0.fields.cacheDisable)
 			(corePageTables + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(mtrrs, cache);
 
+		EPT_TABLE_POINTER EPTP = {};
+
+		__vmx_vmread(EPT_POINTER, &EPTP.AsUInt64);
+
 		EPT_CTX ctx = {};
-		_invept(INV_ALL_CONTEXTS, &ctx);
+
+		ctx.PEPT = EPTP.AsUInt64;
+		ctx.High = VIRTUAL_CPU_ID(pVirtCpuInfo->otherInfo.cpuIdx);
+
+		_invept(INV_SINGLE_CONTEXT, &ctx);
 	}
 
 	return false;

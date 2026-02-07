@@ -106,7 +106,7 @@ void GlobalManager::HookApi()
 	//Ö´ÐÐhook
 	EptHookRecord record = {};
 
-	/*
+	
 
 	if (apiVirtAddr1 != NULL)
 	{
@@ -132,7 +132,7 @@ void GlobalManager::HookApi()
 		KdPrint(("Hook ExAllocatePool2 OK!\n"));
 	}
 
-	*/
+	/*
 
 	if (apiVirtAddr3 != NULL)
 	{
@@ -145,6 +145,8 @@ void GlobalManager::HookApi()
 
 		KdPrint(("Hook ZwClose OK!\n"));
 	}
+
+	*/
 	
 #if defined(TEST_NPT_HOOK_REMOVE)
 	nptHookManager.RemoveHook(apiVirtAddr1);
