@@ -904,11 +904,101 @@ NTSTATUS VTXManager::EnterVirtualization()
 {
 	PAGED_CODE();
 
-	auto enterVirtualizationCore = [this](UINT32 cpuIdx) -> NTSTATUS
-		{
-			IA32_VTX_BASIC_MSR VTXBasic = {};
-			VTXBasic.AsUInt64 = __readmsr(IA32_MSR_VTX_BASIC);
+	VTX_VM_ENTER_CONTROLS vmEnterCtlRequested = { 0 };
+	VTX_VM_EXIT_CONTROLS vmExitCtlRequested = { 0 };
+	VTX_PIN_BASED_CONTROLS vmPinCtlRequested = { 0 };
+	VTX_CPU_BASED_CONTROLS vmCpuCtlRequested = { 0 };
+	VTX_SECONDARY_CPU_BASED_CONTROLS vmCpuCtl2Requested = { 0 };
+	ULONG exceptionBitmap = 0;
+	IA32_VTX_BASIC_MSR VTXBasic = {};
+	VTXBasic.AsUInt64 = __readmsr(IA32_MSR_VTX_BASIC);
 
+	if (pBreakpointInterceptPlugin != NULL)
+		exceptionBitmap |= (1U << BP_EXCEPTION_VECTOR_INDEX);
+
+	if (pSingleStepInterceptPlugin != NULL)
+		exceptionBitmap |= (1U << DB_EXCEPTION_VECTOR_INDEX);
+
+	if (pInvalidOpcodeInterceptPlugin != NULL)
+		exceptionBitmap |= (1U << UD_EXCEPTION_VECTOR_INDEX);
+
+	//vmPinCtlRequested.Fields.NMIExiting = true;
+
+	// As we exit back into the guest, make sure to exist in x64 mode as well.
+	vmEnterCtlRequested.Fields.IA32eModeGuest = TRUE;
+	//vmEnterCtlRequested.Fields.LoadIA32_EFER = TRUE;
+	//vmEnterCtlRequested.Fields.LoadIA32_PAT = TRUE;
+
+	// If any interrupts were pending upon entering the hypervisor, acknowledge
+	// them when we're done. And make sure to enter us in x64 mode at all times
+	vmExitCtlRequested.Fields.AcknowledgeInterruptOnExit = TRUE;
+	vmExitCtlRequested.Fields.HostAddressSpaceSize = TRUE;
+	vmExitCtlRequested.Fields.SaveDebugControls = TRUE;
+	vmExitCtlRequested.Fields.SaveIA32_EFER = TRUE;
+	vmExitCtlRequested.Fields.SaveIA32_PAT = TRUE;
+	//vmExitCtlRequested.Fields.LoadIA32_EFER = TRUE;
+	//vmExitCtlRequested.Fields.LoadIA32_PAT = TRUE;
+
+	// In order for our choice of supporting RDTSCP and XSAVE/RESTORES above to
+	// actually mean something, we have to request secondary controls. We also
+	// want to activate the MSR bitmap in order to keep them from being caught.
+	vmCpuCtlRequested.Fields.UseMSRBitmaps = TRUE;
+	vmCpuCtlRequested.Fields.ActivateSecondaryControl = TRUE;
+	//vmCpuCtlRequested.Fields.INVLPGExiting = FALSE;
+	//vmCpuCtlRequested.Fields.UseTSCOffseting = TRUE;
+	//vmCpuCtlRequested.Fields.RDTSCExiting = TRUE;
+	vmCpuCtl2Requested.Fields.EnableINVPCID = TRUE;
+	vmCpuCtl2Requested.Fields.EnableVMFunctions = TRUE;
+
+	//启用无限制客户机模式
+	vmCpuCtl2Requested.AsUInt32 |= (1UL << 31);
+
+	// Enable support for RDTSCP and XSAVES/XRESTORES in the guest. Windows 10
+	// makes use of both of these instructions if the CPU supports it. By using
+	// VTXpAdjustMsr, these options will be ignored if this processor does
+	// not actually support the instructions to begin with.
+	vmCpuCtl2Requested.Fields.EnableRDTSCP = TRUE;
+	vmCpuCtl2Requested.Fields.EnableXSAVESXSTORS = TRUE;
+
+	auto adjustVTXValue = [](UINT32 originValue, UINT64 adjustValue) -> UINT32
+		{
+			originValue &= ((adjustValue >> 32) & 0xffffffff);
+			originValue |= (adjustValue & 0xffffffff);
+			return originValue;
+		};
+
+	UINT64 vmEntryControlsRealValue = adjustVTXValue(vmEnterCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_ENTRY_CTLS) : __readmsr(IA32_MSR_VTX_ENTRY_CTLS));
+
+	UINT64 vnExitControlsRealValue = adjustVTXValue(vmExitCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_EXIT_CTLS) : __readmsr(IA32_MSR_VTX_EXIT_CTLS));
+
+	UINT64 vmSecondaryVmExecControlsRealValue = adjustVTXValue(vmCpuCtl2Requested.AsUInt32, __readmsr(IA32_MSR_VTX_PROCBASED_CTLS2));
+
+	UINT64 vmCpuBasedVmExecControlsRealValue = adjustVTXValue(vmCpuCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PROCBASED_CTLS) : __readmsr(IA32_MSR_VTX_PROCBASED_CTLS));
+
+	UINT64 vmPinBasedVmExecControlsRealValue = adjustVTXValue(vmPinCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PINBASED_CTLS) : __readmsr(IA32_MSR_VTX_PINBASED_CTLS));
+
+	for (PTR_TYPE idx = 0; idx < cpuCnt; ++idx)
+	{
+		PTR_TYPE* pParams = (PTR_TYPE*)(pVirtCpuInfo[idx]->stack1 + sizeof pVirtCpuInfo[idx]->stack1 - 0x50);
+		pParams[0] = (PTR_TYPE)&pVirtCpuInfo[idx]->regsBackup.genericRegisters2;
+		pParams[1] = (PTR_TYPE)&pVirtCpuInfo[idx]->regsBackup.genericRegisters1;
+		pParams[2] = (PTR_TYPE)pVirtCpuInfo[idx];
+
+		pParams = (PTR_TYPE*)(pVirtCpuInfo[idx]->stack2 + sizeof pVirtCpuInfo[idx]->stack2 - sizeof(PTR_TYPE));
+		pParams[0] = (PTR_TYPE)&pVirtCpuInfo[idx]->regsBackup.genericRegisters2;
+	}
+
+	if (features.VPID)
+	{
+		vmCpuCtlRequested.Fields.CR3LoadExiting = TRUE;
+		vmCpuCtl2Requested.Fields.EnableVPID = TRUE;
+	}
+
+	if (pEptpProvider != NULL)
+		vmCpuCtl2Requested.Fields.EnableEPT = TRUE;
+
+	auto enterVirtualizationCore = [&](UINT32 cpuIdx) -> NTSTATUS
+		{
 			// Ensure the the VMCS can fit into a single page
 			if (VTXBasic.Fields.RegionSize > PAGE_SIZE)
 			{
@@ -963,56 +1053,9 @@ NTSTATUS VTXManager::EnterVirtualization()
 					return STATUS_INSUFFICIENT_RESOURCES;
 				}
 
-				VTX_VM_ENTER_CONTROLS vmEnterCtlRequested = { 0 };
-				VTX_VM_EXIT_CONTROLS vmExitCtlRequested = { 0 };
-				VTX_PIN_BASED_CONTROLS vmPinCtlRequested = { 0 };
-				VTX_CPU_BASED_CONTROLS vmCpuCtlRequested = { 0 };
-				VTX_SECONDARY_CPU_BASED_CONTROLS vmCpuCtl2Requested = { 0 };
-				ULONG exceptionBitmap = 0;
-
-				auto adjustVTXValue = [](UINT32 originValue, UINT64 adjustValue) -> UINT32
-					{
-						originValue &= ((adjustValue >> 32) & 0xffffffff);
-						originValue |= (adjustValue & 0xffffffff);
-						return originValue;
-					};
-
-				//vmPinCtlRequested.Fields.NMIExiting = true;
-
-				// As we exit back into the guest, make sure to exist in x64 mode as well.
-				vmEnterCtlRequested.Fields.IA32eModeGuest = TRUE;
-				//vmEnterCtlRequested.Fields.LoadIA32_EFER = TRUE;
-				//vmEnterCtlRequested.Fields.LoadIA32_PAT = TRUE;
-
-				// If any interrupts were pending upon entering the hypervisor, acknowledge
-				// them when we're done. And make sure to enter us in x64 mode at all times
-				vmExitCtlRequested.Fields.AcknowledgeInterruptOnExit = TRUE;
-				vmExitCtlRequested.Fields.HostAddressSpaceSize = TRUE;
-				vmExitCtlRequested.Fields.SaveDebugControls = TRUE;
-				vmExitCtlRequested.Fields.SaveIA32_EFER = TRUE;
-				vmExitCtlRequested.Fields.SaveIA32_PAT = TRUE;
-				//vmExitCtlRequested.Fields.LoadIA32_EFER = TRUE;
-				//vmExitCtlRequested.Fields.LoadIA32_PAT = TRUE;
-
-				// In order for our choice of supporting RDTSCP and XSAVE/RESTORES above to
-				// actually mean something, we have to request secondary controls. We also
-				// want to activate the MSR bitmap in order to keep them from being caught.
-				vmCpuCtlRequested.Fields.UseMSRBitmaps = TRUE;
-				vmCpuCtlRequested.Fields.ActivateSecondaryControl = TRUE;
-				//vmCpuCtlRequested.Fields.INVLPGExiting = FALSE;
-				//vmCpuCtlRequested.Fields.UseTSCOffseting = TRUE;
-				//vmCpuCtlRequested.Fields.RDTSCExiting = TRUE;
-
 				// VPID caches must be invalidated on CR3 change
 				if (features.VPID)
-				{
-					vmCpuCtlRequested.Fields.CR3LoadExiting = TRUE;
-					vmCpuCtl2Requested.Fields.EnableVPID = TRUE;
 					__vmx_vmwrite(VIRTUAL_PROCESSOR_ID, VIRTUAL_CPU_ID(cpuIdx));
-				}
-
-				vmCpuCtl2Requested.Fields.EnableINVPCID = TRUE;
-				vmCpuCtl2Requested.Fields.EnableVMFunctions = TRUE;
 
 				if (pEptpProvider != NULL)
 				{
@@ -1027,50 +1070,31 @@ NTSTATUS VTXManager::EnterVirtualization()
 					vmCpuCtl2Requested.Fields.EnableEPT = TRUE;
 				}
 
-				//启用无限制客户机模式
-				vmCpuCtl2Requested.AsUInt32 |= (1UL << 31);
-
-				// Enable support for RDTSCP and XSAVES/XRESTORES in the guest. Windows 10
-				// makes use of both of these instructions if the CPU supports it. By using
-				// VTXpAdjustMsr, these options will be ignored if this processor does
-				// not actually support the instructions to begin with.
-				vmCpuCtl2Requested.Fields.EnableRDTSCP = TRUE;
-				vmCpuCtl2Requested.Fields.EnableXSAVESXSTORS = TRUE;
-
 				// Begin by setting the link pointer to the required value for 4KB VMCS.
 				__vmx_vmwrite(VMCS_LINK_POINTER, MAXULONG64);
 
 				__vmx_vmwrite(
 					PIN_BASED_VM_EXEC_CONTROL,
-					adjustVTXValue(vmPinCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PINBASED_CTLS) : __readmsr(IA32_MSR_VTX_PINBASED_CTLS))
+					vmPinBasedVmExecControlsRealValue
 				);
 				__vmx_vmwrite(
 					CPU_BASED_VM_EXEC_CONTROL,
-					adjustVTXValue(vmCpuCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PROCBASED_CTLS) : __readmsr(IA32_MSR_VTX_PROCBASED_CTLS))
+					vmCpuBasedVmExecControlsRealValue
 				);
 				__vmx_vmwrite(
 					SECONDARY_VM_EXEC_CONTROL,
-					adjustVTXValue(vmCpuCtl2Requested.AsUInt32, __readmsr(IA32_MSR_VTX_PROCBASED_CTLS2))
+					vmSecondaryVmExecControlsRealValue
 				);
 				__vmx_vmwrite(
 					VM_EXIT_CONTROLS,
-					adjustVTXValue(vmExitCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_EXIT_CTLS) : __readmsr(IA32_MSR_VTX_EXIT_CTLS))
+					vnExitControlsRealValue
 				);
 				__vmx_vmwrite(
 					VM_ENTRY_CONTROLS,
-					adjustVTXValue(vmEnterCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_ENTRY_CTLS) : __readmsr(IA32_MSR_VTX_ENTRY_CTLS))
+					vmEntryControlsRealValue
 				);
 
 				__vmx_vmwrite(MSR_BITMAP, msrPremissionMap.GetPhyAddress());
-
-				if (pBreakpointInterceptPlugin != NULL)
-					exceptionBitmap |= (1U << BP_EXCEPTION_VECTOR_INDEX);
-
-				if (pSingleStepInterceptPlugin != NULL)
-					exceptionBitmap |= (1U << DB_EXCEPTION_VECTOR_INDEX);
-
-				if (pInvalidOpcodeInterceptPlugin != NULL)
-					exceptionBitmap |= (1U << UD_EXCEPTION_VECTOR_INDEX);
 
 				__vmx_vmwrite(EXCEPTION_BITMAP, exceptionBitmap);
 
@@ -1114,14 +1138,6 @@ NTSTATUS VTXManager::EnterVirtualization()
 
 					__vmx_vmwrite(HOST_RSP, (PTR_TYPE)(pVirtCpuInfo[cpuIdx]->stack1 + sizeof pVirtCpuInfo[cpuIdx]->stack1 - 0x50));
 					__vmx_vmwrite(HOST_RIP, (PTR_TYPE)VmEntry);
-
-					PTR_TYPE* pParams = (PTR_TYPE*)(pVirtCpuInfo[cpuIdx]->stack1 + sizeof pVirtCpuInfo[cpuIdx]->stack1 - 0x50);
-					pParams[0] = (PTR_TYPE)&pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters2;
-					pParams[1] = (PTR_TYPE)&pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters1;
-					pParams[2] = (PTR_TYPE)pVirtCpuInfo[cpuIdx];
-
-					pParams = (PTR_TYPE*)(pVirtCpuInfo[cpuIdx]->stack2 + sizeof pVirtCpuInfo[cpuIdx]->stack2 - sizeof(PTR_TYPE));
-					pParams[0] = (PTR_TYPE)&pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters2;
 				}
 
 				PTR_TYPE value = 0;
