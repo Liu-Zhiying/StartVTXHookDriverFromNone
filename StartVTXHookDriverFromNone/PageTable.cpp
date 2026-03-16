@@ -392,7 +392,6 @@ bool PageTableManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, Generi
 		EPT_CTX ctx = {};
 
 		ctx.PEPT = EPTP.AsUInt64;
-		ctx.High = VIRTUAL_CPU_ID(pVirtCpuInfo->otherInfo.cpuIdx);
 
 		_invept(INV_SINGLE_CONTEXT, &ctx);
 	}

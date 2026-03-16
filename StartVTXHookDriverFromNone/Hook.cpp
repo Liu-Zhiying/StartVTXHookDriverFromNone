@@ -256,7 +256,6 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 		EPT_CTX ctx = {};
 
 		ctx.PEPT = EPTP.AsUInt64;
-		ctx.High = VIRTUAL_CPU_ID(cpuIdx);
 
 		_invept(INV_SINGLE_CONTEXT, &ctx);
 
@@ -267,8 +266,6 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 		result = pageTableManager1.HandleEptViolation(pVirtCpuInfo, pGuestRegisters) &&
 			pageTableManager2.HandleEptViolation(pVirtCpuInfo, pGuestRegisters);
 	}
-
-	
 
 	return result;
 }
@@ -612,7 +609,6 @@ bool EptHookManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, GenericR
 		EPT_CTX ctx = {};
 
 		ctx.PEPT = EPTP.AsUInt64;
-		ctx.High = VIRTUAL_CPU_ID(pVirtCpuInfo->otherInfo.cpuIdx);
 
 		_invept(INV_SINGLE_CONTEXT, &ctx);
 	}
@@ -653,23 +649,13 @@ NTSTATUS EptHookManager::RemoveHook(PVOID pHookOriginVirtAddr)
 
 	auto processor = [pHookOriginVirtAddr, this](UINT32 cpuIdx) -> NTSTATUS
 		{
-			NTSTATUS status = RemoveHookInSignleCore(pHookOriginVirtAddr, cpuIdx);
-
-			EPT_TABLE_POINTER EPTP = {};
-
-			__vmx_vmread(EPT_POINTER, &EPTP.AsUInt64);
-
-			EPT_CTX ctx = {};
-
-			ctx.PEPT = EPTP.AsUInt64;
-			ctx.High = VIRTUAL_CPU_ID(cpuIdx);
-
-			_invept(INV_SINGLE_CONTEXT, &ctx);
-
-			return status;
+			return RemoveHookInSignleCore(pHookOriginVirtAddr, cpuIdx);
 		};
 
 	NTSTATUS status = RunOnEachCore(0, KeQueryMaximumProcessorCountEx(ALL_PROCESSOR_GROUPS), processor);
+
+	EPT_CTX ctx = {};
+	_invept(INV_ALL_CONTEXTS, &ctx);
 
 	return status;
 }

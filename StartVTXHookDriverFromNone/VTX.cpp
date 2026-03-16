@@ -1008,7 +1008,7 @@ NTSTATUS VTXManager::EnterVirtualization()
 				{
 					vmCpuCtlRequested.Fields.CR3LoadExiting = TRUE;
 					vmCpuCtl2Requested.Fields.EnableVPID = TRUE;
-					__vmx_vmwrite(VIRTUAL_PROCESSOR_ID, 100);
+					__vmx_vmwrite(VIRTUAL_PROCESSOR_ID, VIRTUAL_CPU_ID(cpuIdx));
 				}
 
 				vmCpuCtl2Requested.Fields.EnableINVPCID = TRUE;
