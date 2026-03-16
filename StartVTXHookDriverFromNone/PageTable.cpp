@@ -7,6 +7,7 @@
 //¼òµ¥ÒÆÎ»
 #define MUL_UNIT(value, rightShift) ((value) << (rightShift))
 
+#pragma code_seg()
 MtrrData ReadMtrrData() {
 	MtrrData mtrrs = {};
 
@@ -30,6 +31,7 @@ MtrrData ReadMtrrData() {
 	return mtrrs;
 }
 
+#pragma code_seg()
 MtrrMemoryTypeCache GenMtrrMemoryTypeCache(const MtrrData& mtrrs)
 {
 	MtrrMemoryTypeCache cache = {};
@@ -46,6 +48,34 @@ MtrrMemoryTypeCache GenMtrrMemoryTypeCache(const MtrrData& mtrrs)
 
 	return cache;
 }
+
+#pragma code_seg()
+MtrrData& GetSignletonMtrrData()
+{
+	static MtrrData mtrrData = {};
+	static bool isInited = false;
+	if (!isInited)
+	{
+		mtrrData = ReadMtrrData();
+		isInited = true;
+	}
+	return mtrrData;
+}
+
+#pragma code_seg()
+MtrrMemoryTypeCache& GetSignletonMtrrMemoryTypeCache()
+{
+	static unsigned char mtrrMemoryTypeCache[sizeof(MtrrMemoryTypeCache)] = {};
+	static bool isInited = false;
+	if (!isInited)
+	{
+		CallConstructor((MtrrMemoryTypeCache*)mtrrMemoryTypeCache);
+		*((MtrrMemoryTypeCache*)mtrrMemoryTypeCache) = GenMtrrMemoryTypeCache(GetSignletonMtrrData());
+		isInited = true;
+	}
+	return *((MtrrMemoryTypeCache*)mtrrMemoryTypeCache);
+}
+
 
 #pragma code_seg()
 bool IsPagePresent(EptEntry entry)
@@ -379,11 +409,8 @@ bool PageTableManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, Generi
 		CR0 cr0 = {};
 		__vmx_vmread(GUEST_CR0, &cr0.data);
 
-		MtrrData mtrrs = ReadMtrrData();
-		MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(mtrrs);
-
 		if (!cr0.fields.cacheDisable)
-			(corePageTables + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(mtrrs, cache);
+			(corePageTables + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
 
 		EPT_TABLE_POINTER EPTP = {};
 
@@ -889,12 +916,7 @@ NTSTATUS CoreEptPageTableManager::BuildEptPageTable()
 	} while (false);
 
 	if (NT_SUCCESS(status))
-	{
-		MtrrData mtrrs = ReadMtrrData();
-		MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(mtrrs);
-
-		UpdateMemoryType(mtrrs, cache);
-	}
+		UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
 
 	return status;
 }

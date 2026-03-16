@@ -26,6 +26,9 @@ void UnloadDriver(IN PDRIVER_OBJECT drvObj)
 		IoDeleteSymbolicLink(&symLinkName);
 		IoDeleteDevice(devObj);
 		CallDestroyer(pGlobalManager);
+
+		CallDestroyer(&GetSignletonMtrrMemoryTypeCache());
+		CallDestroyer(&GetSignletonMtrrData());
 	}
 	KdPrint(("VT-X driver has exited\n"));
 }
@@ -67,6 +70,9 @@ extern "C" NTSTATUS DriverEntry(IN PDRIVER_OBJECT pDriverObject,
 		if (!NT_SUCCESS(status))
 			break;
 		initStep = 2;
+
+		GetSignletonMtrrData();
+		GetSignletonMtrrMemoryTypeCache();
 
 		//使用设备扩展初始化GlobalManager
 		pGlobalManager = ((GlobalManager*)fdo->DeviceExtension);

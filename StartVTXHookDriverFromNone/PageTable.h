@@ -130,8 +130,6 @@ struct MtrrData {
 	UINT32 varCount;
 };
 
-MtrrData ReadMtrrData();
-
 //MTTR 内存内存类型MSR记录条目
 struct MtrrMemoryTypeRecord
 {
@@ -277,8 +275,6 @@ public:
 };
 
 typedef MtrrMemoryTypeCacheBase<0x20> MtrrMemoryTypeCache;
-
-MtrrData ReadMtrrData();
 
 //分配的EPT页表记录条目
 struct PageTableRecord
@@ -574,6 +570,10 @@ public:
 //查询当前CR3（顶层页表）的虚拟地址
 void GetSysPXEVirtAddr(PTR_TYPE* pPxeOut, PTR_TYPE pxePhyAddr);
 
+MtrrData ReadMtrrData();
 MtrrMemoryTypeCache GenMtrrMemoryTypeCache(const MtrrData& mtrrs);
+
+MtrrData& GetSignletonMtrrData();
+MtrrMemoryTypeCache& GetSignletonMtrrMemoryTypeCache();
 
 #endif
