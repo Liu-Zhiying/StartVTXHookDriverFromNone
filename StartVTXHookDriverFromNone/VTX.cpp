@@ -904,6 +904,8 @@ NTSTATUS VTXManager::EnterVirtualization()
 {
 	PAGED_CODE();
 
+	//把VT-X相关的通用配置提前初始化，避免超多核心Intel CPU （例如Xone E5） 进入虚拟化时出现DPC WATCHOUT 问题
+
 	VTX_VM_ENTER_CONTROLS vmEnterCtlRequested = { 0 };
 	VTX_VM_EXIT_CONTROLS vmExitCtlRequested = { 0 };
 	VTX_PIN_BASED_CONTROLS vmPinCtlRequested = { 0 };
