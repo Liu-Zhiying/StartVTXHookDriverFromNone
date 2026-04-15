@@ -6,7 +6,7 @@ bool SetRegsThenVTXCallWrapper(PTR_TYPE* rax, PTR_TYPE* rbx, PTR_TYPE* rcx, PTR_
 constexpr UINT32 GUEST_CALL_VMM_VTXCALL_FUNCTION = 0x400000ff;
 constexpr UINT32 EXIT_VTX_VTXCALL_SUBFUNCTION = 0x00000000;
 constexpr UINT32 IS_IN_VTX_VTXCALL_SUBFUNCTION = 0x00000001;
-constexpr UINT32 SVM_TAG = MAKE_TAG('s', 'v', 'm', ' ');
+constexpr UINT32 VTX_TAG = MAKE_TAG('s', 'v', 'm', ' ');
 constexpr UINT32 TYPE_MOV_TO_CR = 0;
 constexpr UINT32 TYPE_MOV_FROM_CR = 1;
 
@@ -405,10 +405,9 @@ typedef union _INTERRUPT_INFO_FIELD
 //这个函数完全照抄https://github.com/tandasat/SimpleSvmU
 //原函数名字是SvGetSegmentAccessRight
 //获取段寄存器Attribute
-#pragma code_seg("PAGE")
+#pragma code_seg()
 VTXAccessRight GetSegmentAttribute(_In_ UINT16 SegmentSelector, _In_ ULONG_PTR GdtBase)
 {
-	PAGED_CODE();
 	PSEGMENT_DESCRIPTOR descriptor = NULL;
 	VTXAccessRight attribute = {};
 
@@ -434,10 +433,9 @@ VTXAccessRight GetSegmentAttribute(_In_ UINT16 SegmentSelector, _In_ ULONG_PTR G
 }
 
 //获取段寄存器Base
-#pragma code_seg("PAGE")
+#pragma code_seg()
 UINT64 GetSegmentBaseAddress(_In_ UINT16 SegmentSelector, _In_ ULONG_PTR GdtBase)
 {
-	PAGED_CODE();
 	PSEGMENT_DESCRIPTOR descriptor;
 	UINT64 baseAddress = 0;
 
@@ -454,10 +452,9 @@ UINT64 GetSegmentBaseAddress(_In_ UINT16 SegmentSelector, _In_ ULONG_PTR GdtBase
 }
 
 //获取段寄存器Limit
-#pragma code_seg("PAGE")
+#pragma code_seg()
 UINT32 GetSegmentLimit2(_In_ UINT16 SegmentSelector, _In_ ULONG_PTR GdtBase)
 {
-	PAGED_CODE();
 	PSEGMENT_DESCRIPTOR descriptor;
 	UINT32 limit = 0;
 
@@ -591,7 +588,7 @@ NTSTATUS MsrPremissionsMapManager::Init()
 	RTL_BITMAP bitmapHeader = {};
 
 	//分配物理连续内存
-	pMsrPremissionsMapVirtAddr = AllocContiguousMem(1ULL * PAGE_SIZE, SVM_TAG);
+	pMsrPremissionsMapVirtAddr = AllocContiguousMem(1ULL * PAGE_SIZE, VTX_TAG);
 	if (pMsrPremissionsMapVirtAddr == NULL)
 	{
 		KdPrint(("MsrPremissionsMapManager::Init(): Memory not enough!\n"));
@@ -672,7 +669,7 @@ void MsrPremissionsMapManager::Deinit()
 	PAGED_CODE();
 	if (pMsrPremissionsMapVirtAddr != NULL)
 	{
-		FreeContigousMem(pMsrPremissionsMapVirtAddr, SVM_TAG);
+		FreeContigousMem(pMsrPremissionsMapVirtAddr, VTX_TAG);
 		pMsrPremissionsMapVirtAddr = NULL;
 		pMsrPremissionsMapPhyAddr = NULL;
 	}
@@ -825,7 +822,7 @@ NTSTATUS VTXManager::Init()
 		//为每一个CPU分配进入虚拟化必备的资源
 		//这里先初始化每个CPU的资源指针
 		cpuCnt = KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS);
-		pVirtCpuInfo = (VirtCpuInfo**)AllocNonPagedMem(cpuCnt * sizeof(VirtCpuInfo*), SVM_TAG);
+		pVirtCpuInfo = (VirtCpuInfo**)AllocNonPagedMem(cpuCnt * sizeof(VirtCpuInfo*), VTX_TAG);
 
 		if (pVirtCpuInfo == NULL)
 		{
@@ -845,7 +842,7 @@ NTSTATUS VTXManager::Init()
 		//为每个CPU分配进入虚拟化所需的内存
 		for (idx = 0; idx < cpuCnt; ++idx)
 		{
-			pVirtCpuInfo[idx] = (VirtCpuInfo*)AllocNonPagedMem(sizeof(VirtCpuInfo), SVM_TAG);
+			pVirtCpuInfo[idx] = (VirtCpuInfo*)AllocNonPagedMem(sizeof(VirtCpuInfo), VTX_TAG);
 			if (pVirtCpuInfo[idx] == NULL)
 			{
 				status = STATUS_INSUFFICIENT_RESOURCES;
@@ -889,78 +886,82 @@ void VTXManager::Deinit()
 
 		for (SIZE_TYPE idx = 0; idx < cpuCnt; ++idx)
 		{
-			FreeNonPagedMem(pVirtCpuInfo[idx], SVM_TAG);
+			FreeNonPagedMem(pVirtCpuInfo[idx], VTX_TAG);
 			pVirtCpuInfo[idx] = NULL;
 		}
-		FreeNonPagedMem(pVirtCpuInfo, SVM_TAG);
+		FreeNonPagedMem(pVirtCpuInfo, VTX_TAG);
 		pVirtCpuInfo = NULL;
 		cpuCnt = 0;
 	}
 	msrPremissionMap.Deinit();
 }
 
-#pragma code_seg("PAGE")
+#pragma code_seg()
 NTSTATUS VTXManager::EnterVirtualization()
 {
-	PAGED_CODE();
+	struct SharedInfo
+	{
+		VTX_VM_ENTER_CONTROLS vmEnterCtlRequested = { 0 };
+		VTX_VM_EXIT_CONTROLS vmExitCtlRequested = { 0 };
+		VTX_PIN_BASED_CONTROLS vmPinCtlRequested = { 0 };
+		VTX_CPU_BASED_CONTROLS vmCpuCtlRequested = { 0 };
+		VTX_SECONDARY_CPU_BASED_CONTROLS vmCpuCtl2Requested = { 0 };
+		ULONG exceptionBitmap = 0;
+		IA32_VTX_BASIC_MSR VTXBasic = {};
+	} sharedInfo;
 
 	//把VT-X相关的通用配置提前初始化，避免超多核心Intel CPU （例如Xone E5） 进入虚拟化时出现DPC WATCHOUT 问题
 
-	VTX_VM_ENTER_CONTROLS vmEnterCtlRequested = { 0 };
-	VTX_VM_EXIT_CONTROLS vmExitCtlRequested = { 0 };
-	VTX_PIN_BASED_CONTROLS vmPinCtlRequested = { 0 };
-	VTX_CPU_BASED_CONTROLS vmCpuCtlRequested = { 0 };
-	VTX_SECONDARY_CPU_BASED_CONTROLS vmCpuCtl2Requested = { 0 };
-	ULONG exceptionBitmap = 0;
-	IA32_VTX_BASIC_MSR VTXBasic = {};
-	VTXBasic.AsUInt64 = __readmsr(IA32_MSR_VTX_BASIC);
+	
+	sharedInfo.VTXBasic.AsUInt64 = __readmsr(IA32_MSR_VTX_BASIC);
 
 	if (pBreakpointInterceptPlugin != NULL)
-		exceptionBitmap |= (1U << BP_EXCEPTION_VECTOR_INDEX);
+		sharedInfo.exceptionBitmap |= (1U << BP_EXCEPTION_VECTOR_INDEX);
 
 	if (pSingleStepInterceptPlugin != NULL)
-		exceptionBitmap |= (1U << DB_EXCEPTION_VECTOR_INDEX);
+		sharedInfo.exceptionBitmap |= (1U << DB_EXCEPTION_VECTOR_INDEX);
 
 	if (pInvalidOpcodeInterceptPlugin != NULL)
-		exceptionBitmap |= (1U << UD_EXCEPTION_VECTOR_INDEX);
+		sharedInfo.exceptionBitmap |= (1U << UD_EXCEPTION_VECTOR_INDEX);
 
 	//vmPinCtlRequested.Fields.NMIExiting = true;
 
 	// As we exit back into the guest, make sure to exist in x64 mode as well.
-	vmEnterCtlRequested.Fields.IA32eModeGuest = TRUE;
+	sharedInfo.vmEnterCtlRequested.Fields.IA32eModeGuest = TRUE;
 	//vmEnterCtlRequested.Fields.LoadIA32_EFER = TRUE;
 	//vmEnterCtlRequested.Fields.LoadIA32_PAT = TRUE;
 
 	// If any interrupts were pending upon entering the hypervisor, acknowledge
 	// them when we're done. And make sure to enter us in x64 mode at all times
-	vmExitCtlRequested.Fields.AcknowledgeInterruptOnExit = TRUE;
-	vmExitCtlRequested.Fields.HostAddressSpaceSize = TRUE;
-	vmExitCtlRequested.Fields.SaveDebugControls = TRUE;
-	vmExitCtlRequested.Fields.SaveIA32_EFER = TRUE;
-	vmExitCtlRequested.Fields.SaveIA32_PAT = TRUE;
+	sharedInfo.vmExitCtlRequested.Fields.AcknowledgeInterruptOnExit = TRUE;
+	sharedInfo.vmExitCtlRequested.Fields.HostAddressSpaceSize = TRUE;
+	sharedInfo.vmExitCtlRequested.Fields.SaveDebugControls = TRUE;
+	sharedInfo.vmExitCtlRequested.Fields.SaveIA32_EFER = TRUE;
+	sharedInfo.vmExitCtlRequested.Fields.SaveIA32_PAT = TRUE;
 	//vmExitCtlRequested.Fields.LoadIA32_EFER = TRUE;
 	//vmExitCtlRequested.Fields.LoadIA32_PAT = TRUE;
 
 	// In order for our choice of supporting RDTSCP and XSAVE/RESTORES above to
 	// actually mean something, we have to request secondary controls. We also
 	// want to activate the MSR bitmap in order to keep them from being caught.
-	vmCpuCtlRequested.Fields.UseMSRBitmaps = TRUE;
-	vmCpuCtlRequested.Fields.ActivateSecondaryControl = TRUE;
+	sharedInfo.vmCpuCtlRequested.Fields.UseMSRBitmaps = TRUE;
+	sharedInfo.vmCpuCtlRequested.Fields.ActivateSecondaryControl = TRUE;
 	//vmCpuCtlRequested.Fields.INVLPGExiting = FALSE;
 	//vmCpuCtlRequested.Fields.UseTSCOffseting = TRUE;
 	//vmCpuCtlRequested.Fields.RDTSCExiting = TRUE;
-	vmCpuCtl2Requested.Fields.EnableINVPCID = TRUE;
-	vmCpuCtl2Requested.Fields.EnableVMFunctions = TRUE;
+	sharedInfo.vmCpuCtl2Requested.Fields.EnableINVPCID = TRUE;
+	//vmCpuCtl2Requested.Fields.EnableVMFunctions = TRUE;
 
 	//启用无限制客户机模式
-	vmCpuCtl2Requested.AsUInt32 |= (1UL << 31);
+	sharedInfo.vmCpuCtl2Requested.AsUInt32 |= (1UL << 31);
 
 	// Enable support for RDTSCP and XSAVES/XRESTORES in the guest. Windows 10
 	// makes use of both of these instructions if the CPU supports it. By using
 	// VTXpAdjustMsr, these options will be ignored if this processor does
 	// not actually support the instructions to begin with.
-	vmCpuCtl2Requested.Fields.EnableRDTSCP = TRUE;
-	vmCpuCtl2Requested.Fields.EnableXSAVESXSTORS = TRUE;
+	sharedInfo.vmCpuCtl2Requested.Fields.EnableRDTSCP = TRUE;
+	sharedInfo.vmCpuCtl2Requested.Fields.EnableXSAVESXSTORS = TRUE;
+	sharedInfo.vmCpuCtl2Requested.Fields.EnableVMFunctions = TRUE;
 
 	auto adjustVTXValue = [](UINT32 originValue, UINT64 adjustValue) -> UINT32
 		{
@@ -969,15 +970,24 @@ NTSTATUS VTXManager::EnterVirtualization()
 			return originValue;
 		};
 
-	UINT64 vmEntryControlsRealValue = adjustVTXValue(vmEnterCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_ENTRY_CTLS) : __readmsr(IA32_MSR_VTX_ENTRY_CTLS));
+	if (features.VPID)
+	{
+		sharedInfo.vmCpuCtlRequested.Fields.CR3LoadExiting = TRUE;
+		sharedInfo.vmCpuCtl2Requested.Fields.EnableVPID = TRUE;
+	}
 
-	UINT64 vnExitControlsRealValue = adjustVTXValue(vmExitCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_EXIT_CTLS) : __readmsr(IA32_MSR_VTX_EXIT_CTLS));
+	if (pEptpProvider != NULL)
+		sharedInfo.vmCpuCtl2Requested.Fields.EnableEPT = TRUE;
 
-	UINT64 vmSecondaryVmExecControlsRealValue = adjustVTXValue(vmCpuCtl2Requested.AsUInt32, __readmsr(IA32_MSR_VTX_PROCBASED_CTLS2));
+	UINT64 vmEntryControlsRealValue = adjustVTXValue(sharedInfo.vmEnterCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_ENTRY_CTLS) : __readmsr(IA32_MSR_VTX_ENTRY_CTLS));
 
-	UINT64 vmCpuBasedVmExecControlsRealValue = adjustVTXValue(vmCpuCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PROCBASED_CTLS) : __readmsr(IA32_MSR_VTX_PROCBASED_CTLS));
+	UINT64 vnExitControlsRealValue = adjustVTXValue(sharedInfo.vmExitCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_EXIT_CTLS) : __readmsr(IA32_MSR_VTX_EXIT_CTLS));
 
-	UINT64 vmPinBasedVmExecControlsRealValue = adjustVTXValue(vmPinCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PINBASED_CTLS) : __readmsr(IA32_MSR_VTX_PINBASED_CTLS));
+	UINT64 vmSecondaryVmExecControlsRealValue = adjustVTXValue(sharedInfo.vmCpuCtl2Requested.AsUInt32, __readmsr(IA32_MSR_VTX_PROCBASED_CTLS2));
+
+	UINT64 vmCpuBasedVmExecControlsRealValue = adjustVTXValue(sharedInfo.vmCpuCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PROCBASED_CTLS) : __readmsr(IA32_MSR_VTX_PROCBASED_CTLS));
+
+	UINT64 vmPinBasedVmExecControlsRealValue = adjustVTXValue(sharedInfo.vmPinCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PINBASED_CTLS) : __readmsr(IA32_MSR_VTX_PINBASED_CTLS));
 
 	for (PTR_TYPE idx = 0; idx < cpuCnt; ++idx)
 	{
@@ -990,19 +1000,10 @@ NTSTATUS VTXManager::EnterVirtualization()
 		pParams[0] = (PTR_TYPE)&pVirtCpuInfo[idx]->regsBackup.genericRegisters2;
 	}
 
-	if (features.VPID)
-	{
-		vmCpuCtlRequested.Fields.CR3LoadExiting = TRUE;
-		vmCpuCtl2Requested.Fields.EnableVPID = TRUE;
-	}
-
-	if (pEptpProvider != NULL)
-		vmCpuCtl2Requested.Fields.EnableEPT = TRUE;
-
-	auto enterVirtualizationCore = [&](UINT32 cpuIdx) -> NTSTATUS
+	auto enterVirtualizationCore = [&](UINT32 cpuIdx, SharedInfo& info) -> NTSTATUS
 		{
 			// Ensure the the VMCS can fit into a single page
-			if (VTXBasic.Fields.RegionSize > PAGE_SIZE)
+			if (info.VTXBasic.Fields.RegionSize > PAGE_SIZE)
 			{
 				KdPrint(("VTXManager::EnterVirtualization(): CPU %d: VMCS region doesn't fit into one page\n", cpuIdx));
 				return STATUS_INSUFFICIENT_RESOURCES;
@@ -1019,8 +1020,8 @@ NTSTATUS VTXManager::EnterVirtualization()
 				pVirtCpuInfo[cpuIdx]->regsBackup.originCr0 = __readcr0();
 				pVirtCpuInfo[cpuIdx]->regsBackup.originCr4 = __readcr4();
 
-				pVirtCpuInfo[cpuIdx]->guestVmcs.RevisionId = VTXBasic.Fields.RevisionIdentifier;
-				pVirtCpuInfo[cpuIdx]->hostVmcs.RevisionId = VTXBasic.Fields.RevisionIdentifier;
+				pVirtCpuInfo[cpuIdx]->guestVmcs.RevisionId = info.VTXBasic.Fields.RevisionIdentifier;
+				pVirtCpuInfo[cpuIdx]->hostVmcs.RevisionId = info.VTXBasic.Fields.RevisionIdentifier;
 
 				UINT64 newCr0 = pVirtCpuInfo[cpuIdx]->regsBackup.originCr0;
 				UINT64 newCr4 = pVirtCpuInfo[cpuIdx]->regsBackup.originCr4;
@@ -1069,7 +1070,7 @@ NTSTATUS VTXManager::EnterVirtualization()
 
 					__vmx_vmwrite(EPT_POINTER, EPTP.AsUInt64);
 
-					vmCpuCtl2Requested.Fields.EnableEPT = TRUE;
+					info.vmCpuCtl2Requested.Fields.EnableEPT = TRUE;
 				}
 
 				// Begin by setting the link pointer to the required value for 4KB VMCS.
@@ -1098,7 +1099,7 @@ NTSTATUS VTXManager::EnterVirtualization()
 
 				__vmx_vmwrite(MSR_BITMAP, msrPremissionMap.GetPhyAddress());
 
-				__vmx_vmwrite(EXCEPTION_BITMAP, exceptionBitmap);
+				__vmx_vmwrite(EXCEPTION_BITMAP, info.exceptionBitmap);
 
 				{
 					SAVE_GUEST_STATUS_FROM_REGS(pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters2.rflags, (PTR_TYPE)pVirtCpuInfo[cpuIdx]->stack2 + sizeof pVirtCpuInfo[cpuIdx]->stack2 - sizeof(PTR_TYPE), pVirtCpuInfo[cpuIdx]->regsBackup.genericRegisters2.rip);
@@ -1173,14 +1174,12 @@ NTSTATUS VTXManager::EnterVirtualization()
 			return STATUS_SUCCESS;
 		};
 
-	return RunOnEachCore(0, cpuCnt, enterVirtualizationCore);
+		return RunOnEachCore(0, cpuCnt, enterVirtualizationCore, sharedInfo);
 }
 
-#pragma code_seg("PAGE")
+#pragma code_seg()
 void VTXManager::LeaveVirtualization()
 {
-	PAGED_CODE();
-
 	//调用CPUID指令通知VMM退出
 	auto coreAction = [this](UINT32 idx) -> NTSTATUS
 		{
@@ -1231,74 +1230,59 @@ VOID VmxInjectEvent(INTERRUPT_TYPE InterruptType, UINT32 Vector, PTR_TYPE WriteL
 }
 
 #pragma code_seg()
-void VTXManager::VmExitHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+void VTXManager::VmExit_ExceptionNmiHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
 {
-	PTR_TYPE exitReason = 0;
-	__vmx_vmread(VM_EXIT_REASON, &exitReason);
+	INTERRUPT_INFO_FIELD event = { 0 };
+	PTR_TYPE errorCode = 0;
+	PTR_TYPE instructionLength = 0;
+	PTR_TYPE value = 0;
+	__vmx_vmread(VM_EXIT_INSTRUCTION_LEN, &instructionLength);
 
-	switch ((VM_EXIT_REASON_ENUM)exitReason)
+	__vmx_vmread(VM_EXIT_INTR_INFO, &value);
+	event.AsUInt32 = (UINT32)value;
+	__vmx_vmread(VM_EXIT_INTR_ERROR_CODE, &errorCode);
+	if (event.Fields.ErrorCodeValid)
+		__vmx_vmwrite(VM_ENTRY_EXCEPTION_ERROR_CODE, errorCode);
+
+	switch (event.Fields.Type)
 	{
-	case EXIT_REASON_EXCEPTION_NMI:
+	case INTERRUPT_NMI:
 	{
-		INTERRUPT_INFO_FIELD event = { 0 };
-		PTR_TYPE errorCode = 0;
-		PTR_TYPE instructionLength = 0;
-		PTR_TYPE value = 0;
-		__vmx_vmread(VM_EXIT_INSTRUCTION_LEN, &instructionLength);
+		VmxInjectEvent(INTERRUPT_NMI, NMI_EXCEPTION_VECTOR_INDEX, 0);
+		break;
+	}
+	case INTERRUPT_HARDWARE_EXCEPTION:
+	{
+		VmxInjectEvent((INTERRUPT_TYPE)event.Fields.Type, event.Fields.Vector, instructionLength);
+		break;
+	}
 
-		__vmx_vmread(VM_EXIT_INTR_INFO, &value);
-		event.AsUInt32 = (UINT32)value;
-		__vmx_vmread(VM_EXIT_INTR_ERROR_CODE, &errorCode);
-		if (event.Fields.ErrorCodeValid)
-			__vmx_vmwrite(VM_ENTRY_EXCEPTION_ERROR_CODE, errorCode);
+	case INTERRUPT_SOFTWARE_EXCEPTION:
+	{
+		switch (event.Fields.Vector)
+		{
+		case BP_EXCEPTION_VECTOR_INDEX:
+		{
+			if (pBreakpointInterceptPlugin != NULL && pBreakpointInterceptPlugin->HandleBreakpoint(pVMMVirtCpuInfo, pGuestRegisters))
+				break;
 
-		switch (event.Fields.Type)
-		{
-		case INTERRUPT_NMI:
-		{
-			VmxInjectEvent(INTERRUPT_NMI, NMI_EXCEPTION_VECTOR_INDEX, 0);
+			VmxInjectEvent(INTERRUPT_SOFTWARE_EXCEPTION, BP_EXCEPTION_VECTOR_INDEX, instructionLength);
 			break;
 		}
-		case INTERRUPT_HARDWARE_EXCEPTION:
+		case UD_EXCEPTION_VECTOR_INDEX:
 		{
-			VmxInjectEvent((INTERRUPT_TYPE)event.Fields.Type, event.Fields.Vector, instructionLength);
+			if (pInvalidOpcodeInterceptPlugin != NULL && pInvalidOpcodeInterceptPlugin->HandleInvalidOpcode(pVMMVirtCpuInfo, pGuestRegisters))
+				break;
+
+			VmxInjectEvent(INTERRUPT_SOFTWARE_EXCEPTION, UD_EXCEPTION_VECTOR_INDEX, instructionLength);
 			break;
 		}
-
-		case INTERRUPT_SOFTWARE_EXCEPTION:
+		case DB_EXCEPTION_VECTOR_INDEX:
 		{
-			switch (event.Fields.Vector)
-			{
-			case BP_EXCEPTION_VECTOR_INDEX:
-			{
-				if (pBreakpointInterceptPlugin != NULL && pBreakpointInterceptPlugin->HandleBreakpoint(pVMMVirtCpuInfo, pGuestRegisters))
-					break;
+			if (pSingleStepInterceptPlugin != NULL && pSingleStepInterceptPlugin->HandleSignleStep(pVMMVirtCpuInfo, pGuestRegisters))
+			 	break;
 
-				VmxInjectEvent(INTERRUPT_SOFTWARE_EXCEPTION, BP_EXCEPTION_VECTOR_INDEX, instructionLength);
-				break;
-			}
-			case UD_EXCEPTION_VECTOR_INDEX:
-			{
-				if (pInvalidOpcodeInterceptPlugin != NULL && pInvalidOpcodeInterceptPlugin->HandleInvalidOpcode(pVMMVirtCpuInfo, pGuestRegisters))
-					break;
-
-				VmxInjectEvent(INTERRUPT_SOFTWARE_EXCEPTION, UD_EXCEPTION_VECTOR_INDEX, instructionLength);
-				break;
-			}
-			case DB_EXCEPTION_VECTOR_INDEX:
-			{
-				if (pSingleStepInterceptPlugin != NULL && pSingleStepInterceptPlugin->HandleSignleStep(pVMMVirtCpuInfo, pGuestRegisters))
-					break;
-
-				VmxInjectEvent(INTERRUPT_SOFTWARE_EXCEPTION, DB_EXCEPTION_VECTOR_INDEX, instructionLength);
-				break;
-			}
-			default:
-			{
-				VmxInjectEvent((INTERRUPT_TYPE)event.Fields.Type, event.Fields.Vector, instructionLength);
-				break;
-			}
-			}
+			VmxInjectEvent(INTERRUPT_SOFTWARE_EXCEPTION, DB_EXCEPTION_VECTOR_INDEX, instructionLength);
 			break;
 		}
 		default:
@@ -1309,152 +1293,166 @@ void VTXManager::VmExitHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* p
 		}
 		break;
 	}
-	case EXIT_REASON_TRIPLE_FAULT:
+	default:
 	{
-		PTR_TYPE value = 0;
-		__vmx_vmread(GUEST_LINEAR_ADDRESS, &value);
-		__debugbreak();
-		KeBugCheck(MANUALLY_INITIATED_CRASH);
+		VmxInjectEvent((INTERRUPT_TYPE)event.Fields.Type, event.Fields.Vector, instructionLength);
 		break;
 	}
-	case EXIT_REASON_CPUID:
-	{
-		JumpToNextInstruction(pGuestRegisters->rip);
+	}
+}
 
-		if (pCpuIdInterceptPlugin != NULL && pCpuIdInterceptPlugin->HandleCpuid(pVMMVirtCpuInfo, pGuestRegisters))
+#pragma code_seg()
+void VTXManager::VmExit_TripleFaultHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pGuestRegisters);
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+
+	PTR_TYPE value = 0;
+	__vmx_vmread(GUEST_LINEAR_ADDRESS, &value);
+	__debugbreak();
+	KeBugCheck(MANUALLY_INITIATED_CRASH);
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_CpuidHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pGuestRegisters);
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+
+	if (pCpuIdInterceptPlugin != NULL && pCpuIdInterceptPlugin->HandleCpuid(pVMMVirtCpuInfo, pGuestRegisters))
+		return;
+
+	int cpuInfo[4] = {};
+	__cpuidex(cpuInfo, (int)pGuestRegisters->rax, (int)pGuestRegisters->rcx);
+
+	if (pGuestRegisters->rax == 1)
+		cpuInfo[3] &= ~(1U << VTX_BIT_IN_ECX_OFFSET);
+
+	pGuestRegisters->rax = cpuInfo[0];
+	pGuestRegisters->rbx = cpuInfo[1];
+	pGuestRegisters->rcx = cpuInfo[2];
+	pGuestRegisters->rdx = cpuInfo[3];
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_WbinvdHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+	__wbinvd();
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_RdtscHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+	ULARGE_INTEGER tsc = { 0 };
+	tsc.QuadPart = __rdtsc();
+	pGuestRegisters->rdx = tsc.HighPart;
+	pGuestRegisters->rax = tsc.LowPart;
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_CrAccessHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+
+	auto getRegPtr = [](GenericRegisters& guestRegisters, UINT32 regIdx) -> PTR_TYPE*
+		{
+			switch (regIdx)
+			{
+			case 0: return &guestRegisters.rax;
+			case 1: return &guestRegisters.rcx;
+			case 2: return &guestRegisters.rdx;
+			case 3: return &guestRegisters.rbx;
+			case 4: return &guestRegisters.rsp;
+			case 5: return &guestRegisters.rbp;
+			case 6: return &guestRegisters.rsi;
+			case 7: return &guestRegisters.rdi;
+			case 8: return &guestRegisters.r8;
+			case 9: return &guestRegisters.r9;
+			case 10: return &guestRegisters.r10;
+			case 11: return &guestRegisters.r11;
+			case 12: return &guestRegisters.r12;
+			case 13: return &guestRegisters.r13;
+			case 14: return &guestRegisters.r14;
+			case 15: return &guestRegisters.r15;
+			default: return NULL;
+			}
+		};
+
+	MOV_CR_QUALIFICATION data = {};
+	__vmx_vmread(EXIT_QUALIFICATION, (size_t*)&data);
+	PTR_TYPE* regPtr = getRegPtr(*pGuestRegisters, data.Fields.Register);
+	VPID_CTX ctx = {};
+
+	switch (data.Fields.AccessType)
+	{
+	case TYPE_MOV_TO_CR:
+	{
+		switch (data.Fields.ControlRegister)
+		{
+		case 0:
+		{
+			__vmx_vmwrite(GUEST_CR0, *regPtr);
+			__vmx_vmwrite(CR0_READ_SHADOW, *regPtr);
 			break;
-
-		int cpuInfo[4] = {};
-		__cpuidex(cpuInfo, (int)pGuestRegisters->rax, (int)pGuestRegisters->rcx);
-
-		if (pGuestRegisters->rax == 1)
-			cpuInfo[3] &= ~(1U << VTX_BIT_IN_ECX_OFFSET);
-
-		pGuestRegisters->rax = cpuInfo[0];
-		pGuestRegisters->rbx = cpuInfo[1];
-		pGuestRegisters->rcx = cpuInfo[2];
-		pGuestRegisters->rdx = cpuInfo[3];
-		break;
-	}
-	case EXIT_REASON_INVD:
-	case EXIT_REASON_WBINVD:
-	{
-		JumpToNextInstruction(pGuestRegisters->rip);
-		__wbinvd();
-		break;
-	}
-	case EXIT_REASON_RDTSC:
-	{
-		JumpToNextInstruction(pGuestRegisters->rip);
-		ULARGE_INTEGER tsc = { 0 };
-		tsc.QuadPart = __rdtsc();
-		pGuestRegisters->rdx = tsc.HighPart;
-		pGuestRegisters->rax = tsc.LowPart;
-		break;
-	}
-	case EXIT_REASON_CR_ACCESS:
-	{
-		JumpToNextInstruction(pGuestRegisters->rip);
-
-		auto getRegPtr = [](GenericRegisters& guestRegisters, UINT32 regIdx) -> PTR_TYPE*
-			{
-				switch (regIdx)
-				{
-				case 0: return &guestRegisters.rax;
-				case 1: return &guestRegisters.rcx;
-				case 2: return &guestRegisters.rdx;
-				case 3: return &guestRegisters.rbx;
-				case 4: return &guestRegisters.rsp;
-				case 5: return &guestRegisters.rbp;
-				case 6: return &guestRegisters.rsi;
-				case 7: return &guestRegisters.rdi;
-				case 8: return &guestRegisters.r8;
-				case 9: return &guestRegisters.r9;
-				case 10: return &guestRegisters.r10;
-				case 11: return &guestRegisters.r11;
-				case 12: return &guestRegisters.r12;
-				case 13: return &guestRegisters.r13;
-				case 14: return &guestRegisters.r14;
-				case 15: return &guestRegisters.r15;
-				default: return NULL;
-				}
-			};
-
-		MOV_CR_QUALIFICATION data = {};
-		__vmx_vmread(EXIT_QUALIFICATION, (size_t*)&data);
-		PTR_TYPE* regPtr = getRegPtr(*pGuestRegisters, data.Fields.Register);
-		VPID_CTX ctx = {};
-
-		switch (data.Fields.AccessType)
+		}
+		case 3:
 		{
-		case TYPE_MOV_TO_CR:
+
+			PTR_TYPE cr4 = 0;
+			__vmx_vmread(GUEST_CR4, &cr4);
+
+			if ((cr4 & 0x20000) && (*regPtr & (1ull << 63)))
+				*regPtr &= ~(1ull << 63);
+
+			__vmx_vmwrite(GUEST_CR3, *regPtr);
+			break;
+		}
+		case 4:
 		{
-			switch (data.Fields.ControlRegister)
-			{
-			case 0:
-			{
-				__vmx_vmwrite(GUEST_CR0, *regPtr);
-				__vmx_vmwrite(CR0_READ_SHADOW, *regPtr);
-				break;
-			}
-			case 3:
-			{
-
-				PTR_TYPE cr4 = 0;
-				__vmx_vmread(GUEST_CR4, &cr4);
-
-				if ((cr4 & 0x20000) && (*regPtr & (1ull << 63)))
-					*regPtr &= ~(1ull << 63);
-
-				__vmx_vmwrite(GUEST_CR3, *regPtr);
-				break;
-			}
-			case 4:
-			{
-				__vmx_vmwrite(GUEST_CR4, *regPtr);
-				__vmx_vmwrite(CR4_READ_SHADOW, *regPtr);
-
-				break;
-			}
-			default:
-			{
-				__debugbreak();
-				KeBugCheck(MANUALLY_INITIATED_CRASH);
-				break;
-			}
-			}
-
-			if (features.VPID)
-				_invvpid(INV_ALL_CONTEXTS, &ctx);
+			__vmx_vmwrite(GUEST_CR4, *regPtr);
+			__vmx_vmwrite(CR4_READ_SHADOW, *regPtr);
 
 			break;
 		}
-		case TYPE_MOV_FROM_CR:
+		default:
 		{
-			switch (data.Fields.ControlRegister)
-			{
-			case 0:
-			{
-				__vmx_vmread(GUEST_CR0, regPtr);
-				break;
-			}
-			case 3:
-			{
-				__vmx_vmread(GUEST_CR3, regPtr);
-				break;
-			}
-			case 4:
-			{
-				__vmx_vmread(GUEST_CR4, regPtr);
-				break;
-			}
-			default:
-			{
-				__debugbreak();
-				KeBugCheck(MANUALLY_INITIATED_CRASH);
-				break;
-			}
-			}
+			__debugbreak();
+			KeBugCheck(MANUALLY_INITIATED_CRASH);
+			break;
+		}
+		}
+
+		if (features.VPID)
+			_invvpid(INV_ALL_CONTEXTS, &ctx);
+
+		break;
+	}
+	case TYPE_MOV_FROM_CR:
+	{
+		switch (data.Fields.ControlRegister)
+		{
+		case 0:
+		{
+			__vmx_vmread(GUEST_CR0, regPtr);
+			break;
+		}
+		case 3:
+		{
+			__vmx_vmread(GUEST_CR3, regPtr);
+			break;
+		}
+		case 4:
+		{
+			__vmx_vmread(GUEST_CR4, regPtr);
 			break;
 		}
 		default:
@@ -1466,320 +1464,318 @@ void VTXManager::VmExitHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* p
 		}
 		break;
 	}
-	case EXIT_REASON_INVALID_GUEST_STATE:
-	case EXIT_REASON_MSR_LOADING:
-	case EXIT_REASON_MACHINE_CHECK:
-	case EXIT_REASON_EPT_MISCONFIG:
-	case EXIT_REASON_NMI_WINDOW:
-	{
-		__debugbreak();
-		KeBugCheck(MANUALLY_INITIATED_CRASH);
-		break;
-	}
-	case EXIT_REASON_RDTSCP:
-	{
-		JumpToNextInstruction(pGuestRegisters->rip);
-		unsigned int tscAux = 0;
-		ULARGE_INTEGER tsc = { 0 };
-		tsc.QuadPart = __rdtscp(&tscAux);
-		pGuestRegisters->rdx = tsc.HighPart;
-		pGuestRegisters->rax = tsc.LowPart;
-		pGuestRegisters->rcx = tscAux;
-		break;
-	}
-	case EXIT_REASON_XSETBV:
-	{
-		JumpToNextInstruction(pGuestRegisters->rip);
-		_xsetbv((ULONG)pGuestRegisters->rcx, pGuestRegisters->rdx << 32 | pGuestRegisters->rax);
-		break;
-	}
-	case EXIT_REASON_VMCALL:
-	{
-		if (pVmCallInterreptPlugin != NULL && pVmCallInterreptPlugin->HandleVmCall(pVMMVirtCpuInfo, pGuestRegisters))
-			break;
-
-		bool handled = false;
-
-		switch ((UINT32)pGuestRegisters->rax)
-		{
-		case GUEST_CALL_VMM_VTXCALL_FUNCTION:
-		{
-			switch ((UINT32)pGuestRegisters->rcx)
-			{
-			case EXIT_VTX_VTXCALL_SUBFUNCTION:
-			{
-				handled = true;
-
-				JumpToNextInstruction(pGuestRegisters->rip);
-
-				//如果不是从内核模式调用退出则忽略
-				if (!IsKernelAddress((PVOID)pGuestRegisters->rip))
-					break;
-
-				PTR_TYPE value = 0;
-				__vmx_vmread(VM_EXIT_INSTRUCTION_LEN, &value);
-
-				//通过
-				//设置pGuestRegisters->extraInfo1为&pVMMVirtCpuInfo->regsBackup.genericRegisters1 和 
-				//设置pGuestRegisters->extraInfo2为pVMMVirtCpuInfo->guestVmcb.controlFields.nRip
-				//告知_run_svm_vmrun退出vmm
-				pGuestRegisters->extraInfo1 = (UINT64)&pVMMVirtCpuInfo->regsBackup.genericRegisters1;
-
-				__vmx_off();
-
-				__writecr0(pVMMVirtCpuInfo->regsBackup.originCr0);
-				__writecr4(pVMMVirtCpuInfo->regsBackup.originCr4);
-
-				break;
-			}
-			case IS_IN_VTX_VTXCALL_SUBFUNCTION:
-			{
-				handled = true;
-
-				JumpToNextInstruction(pGuestRegisters->rip);
-
-				*reinterpret_cast<UINT32*>(&pGuestRegisters->rax) = 'IN';
-				*reinterpret_cast<UINT32*>(&pGuestRegisters->rbx) = 'TEL';
-				*reinterpret_cast<UINT32*>(&pGuestRegisters->rcx) = 'VTX';
-
-				break;
-			}
-			default:
-				break;
-			}
-		}
-		}
-
-		if (handled)
-			break;
-
-		__debugbreak();
-		KeBugCheck(MANUALLY_INITIATED_CRASH);
-		break;
-	}
-	case EXIT_REASON_MSR_READ:
-	{
-		ULONG32 msrNum = (ULONG32)pGuestRegisters->rcx;
-
-		if (pMsrInterceptPlugin != NULL && pMsrInterceptPlugin->HandleMsrImterceptRead(pVMMVirtCpuInfo, pGuestRegisters, msrNum))
-			break;
-
-		JumpToNextInstruction(pGuestRegisters->rip);
-
-		LARGE_INTEGER msrValue = { 0 };
-
-		switch (msrNum)
-		{
-		case IA32_MSR_FS_BASE:
-		{
-			__vmx_vmread(GUEST_FS_BASE, (size_t*)&msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_GS_BASE:
-		{
-			__vmx_vmread(GUEST_GS_BASE, (size_t*)&msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_PAT:
-		{
-			__vmx_vmread(GUEST_IA32_PAT, (size_t*)&msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_EFER:
-		{
-			__vmx_vmread(GUEST_IA32_EFER, (size_t*)&msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_SYSENTER_CS:
-		{
-			__vmx_vmread(GUEST_SYSENTER_CS, (size_t*)&msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_SYSENTER_EIP:
-		{
-			__vmx_vmread(GUEST_SYSENTER_EIP, (size_t*)&msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_SYSENTER_ESP:
-		{
-			__vmx_vmread(GUEST_SYSENTER_ESP, (size_t*)&msrValue.QuadPart);
-			break;
-		}
-		// Report VMX as locked
-		case IA32_MSR_FEATURE_CONTROL:
-		{
-			msrValue.QuadPart = __readmsr(msrNum);
-			PIA32_FEATURE_CONTROL_MSR pMSR = (PIA32_FEATURE_CONTROL_MSR)&msrValue.QuadPart;
-			pMSR->Fields.EnableVTXon = FALSE;
-			pMSR->Fields.Lock = TRUE;
-			break;
-		}
-		default:
-		{
-			msrValue.QuadPart = __readmsr(msrNum);
-			break;
-		}
-		}
-		*reinterpret_cast<UINT32*>(&pGuestRegisters->rax) = msrValue.LowPart;
-		*reinterpret_cast<UINT32*>(&pGuestRegisters->rdx) = msrValue.HighPart;
-		break;
-	}
-	case EXIT_REASON_MSR_WRITE:
-	{
-		ULONG32 msrNum = (ULONG32)pGuestRegisters->rcx;
-
-		if (pMsrInterceptPlugin != NULL && pMsrInterceptPlugin->HandleMsrInterceptWrite(pVMMVirtCpuInfo, pGuestRegisters, msrNum))
-			break;
-
-		JumpToNextInstruction(pGuestRegisters->rip);
-
-		LARGE_INTEGER msrValue = { 0 };
-
-		msrValue.LowPart = (ULONG32)pGuestRegisters->rax;
-		msrValue.HighPart = (ULONG32)pGuestRegisters->rdx;
-
-		switch (msrNum)
-		{
-		case IA32_MSR_FS_BASE:
-		{
-			__vmx_vmwrite(GUEST_FS_BASE, msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_GS_BASE:
-		{
-			__vmx_vmwrite(GUEST_GS_BASE, msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_PAT:
-		{
-			__vmx_vmwrite(GUEST_IA32_PAT, msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_EFER:
-		{
-			__vmx_vmwrite(GUEST_IA32_EFER, msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_SYSENTER_CS:
-		{
-			__vmx_vmwrite(GUEST_SYSENTER_CS, msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_SYSENTER_EIP:
-		{
-			__vmx_vmwrite(GUEST_SYSENTER_EIP, msrValue.QuadPart);
-			break;
-		}
-		case IA32_MSR_SYSENTER_ESP:
-		{
-			__vmx_vmwrite(GUEST_SYSENTER_ESP, msrValue.QuadPart);
-			break;
-		}
-
-		case IA32_MSR_VTX_BASIC:
-		case IA32_MSR_VTX_PINBASED_CTLS:
-		case IA32_MSR_VTX_PROCBASED_CTLS:
-		case IA32_MSR_VTX_EXIT_CTLS:
-		case IA32_MSR_VTX_ENTRY_CTLS:
-		case IA32_MSR_VTX_MISC:
-		case IA32_MSR_VTX_CR0_FIXED0:
-		case IA32_MSR_VTX_CR0_FIXED1:
-		case IA32_MSR_VTX_CR4_FIXED0:
-		case IA32_MSR_VTX_CR4_FIXED1:
-		case IA32_MSR_VTX_VMCS_ENUM:
-		case IA32_MSR_VTX_PROCBASED_CTLS2:
-		case IA32_MSR_VTX_EPT_VPID_CAP:
-		case IA32_MSR_VTX_TRUE_PINBASED_CTLS:
-		case IA32_MSR_VTX_TRUE_PROCBASED_CTLS:
-		case IA32_MSR_VTX_TRUE_EXIT_CTLS:
-		case IA32_MSR_VTX_TRUE_ENTRY_CTLS:
-		case IA32_MSR_VTX_VMFUNC:
-			break;
-
-		default:
-			__writemsr(msrNum, msrValue.QuadPart);
-		}
-		break;
-	}
-	case EXIT_REASON_EPT_VIOLATION:
-	{
-		if (pEptVInterceptPlugin != NULL && pEptVInterceptPlugin->HandleEptViolation(pVMMVirtCpuInfo, pGuestRegisters))
-			break;
-
-		__debugbreak();
-		KeBugCheck(MANUALLY_INITIATED_CRASH);
-		break;
-	}
-	case EXIT_REASOM_MTF:
-	{
-		if (pMTFInterceptPlugin != NULL && pMTFInterceptPlugin->HandleMTF(pVMMVirtCpuInfo, pGuestRegisters))
-			break;
-
-		__debugbreak();
-		KeBugCheck(MANUALLY_INITIATED_CRASH);
-		break;
-	}
-	case EXIT_REASON_INVEPT:
-	{
-		JumpToNextInstruction(pGuestRegisters->rip);
-
-		EPT_CTX ctx = {};
-		_invept(INV_ALL_CONTEXTS, &ctx);
-		break;
-	}
-	case EXIT_REASON_INVLPG:
-	case EXIT_REASON_INVPCID:
-	case EXIT_REASON_VMCLEAR:
-	case EXIT_REASON_VMLAUNCH:
-	case EXIT_REASON_VMPTRLD:
-	case EXIT_REASON_VMPTRST:
-	case EXIT_REASON_VMREAD:
-	case EXIT_REASON_VMRESUME:
-	case EXIT_REASON_VMWRITE:
-	case EXIT_REASON_VMXOFF:
-	case EXIT_REASON_VMXON:
-	case EXIT_REASON_INVVPID:
-	case EXIT_REASON_EXTERNAL_INTERRUPT:
-	case EXIT_REASON_INIT:
-	case EXIT_REASON_SIPI:
-	case EXIT_REASON_IO_SMI:
-	case EXIT_REASON_OTHER_SMI:
-	case EXIT_REASON_PENDING_INTERRUPT:
-	case EXIT_REASON_TASK_SWITCH:
-	case EXIT_REASON_GETSEC:
-	case EXIT_REASON_HLT:
-	case EXIT_REASON_RDPMC:
-	case EXIT_REASON_RSM:
-	case EXIT_REASON_DR_ACCESS:
-	case EXIT_REASON_IO_INSTRUCTION:
-	case EXIT_REASON_RESERVED_35:
-	case EXIT_REASON_MWAIT_INSTRUCTION:
-	case EXIT_REASON_RESERVED_38:
-	case EXIT_REASON_MONITOR_INSTRUCTION:
-	case EXIT_REASON_PAUSE_INSTRUCTION:
-	case EXIT_REASON_RESERVED_42:
-	case EXIT_REASON_TPR_BELOW_THRESHOLD:
-	case EXIT_REASON_APIC_ACCESS:
-	case EXIT_REASON_VIRTUALIZED_EIO:
-	case EXIT_REASON_XDTR_ACCESS:
-	case EXIT_REASON_TR_ACCESS:
-	case EXIT_REASON_PREEMPT_TIMER:
-	case EXIT_REASON_APIC_WRITE:
-	case EXIT_REASON_RDRAND:
-	case EXIT_REASON_VMFUNC:
-	case EXIT_REASON_RESERVED_60:
-	case EXIT_REASON_RDSEED:
-	case EXIT_REASON_RESERVED_62:
-	case EXIT_REASON_XSAVES:
-	case EXIT_REASON_XRSTORS:
 	default:
 	{
-		PTR_TYPE instructionLength = 0;
-		__vmx_vmread(VM_EXIT_INSTRUCTION_LEN, &instructionLength);
-		VmxInjectEvent(INTERRUPT_SOFTWARE_EXCEPTION, UD_EXCEPTION_VECTOR_INDEX, instructionLength);
+		__debugbreak();
+		KeBugCheck(MANUALLY_INITIATED_CRASH);
+		break;
+	}
+	}
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_EptMisconfigHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+	UNREFERENCED_PARAMETER(pGuestRegisters);
+
+	PTR_TYPE physicalAddress = NULL;
+	__vmx_vmread(GUEST_PHYSICAL_ADDRESS, &physicalAddress);
+
+	KdPrint(("Guest phyiscal address = %p\n", physicalAddress));
+
+	__debugbreak();
+	KeBugCheck(MANUALLY_INITIATED_CRASH);
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_NmiWindowHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+	UNREFERENCED_PARAMETER(pGuestRegisters);
+
+	__debugbreak();
+	KeBugCheck(MANUALLY_INITIATED_CRASH);
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_RdtscpHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+	unsigned int tscAux = 0;
+	ULARGE_INTEGER tsc = { 0 };
+	tsc.QuadPart = __rdtscp(&tscAux);
+	pGuestRegisters->rdx = tsc.HighPart;
+	pGuestRegisters->rax = tsc.LowPart;
+	pGuestRegisters->rcx = tscAux;
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_XsetbwHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+	_xsetbv((ULONG)pGuestRegisters->rcx, pGuestRegisters->rdx << 32 | pGuestRegisters->rax);
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_VmcallHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	if (pVmCallInterreptPlugin != NULL && pVmCallInterreptPlugin->HandleVmCall(pVMMVirtCpuInfo, pGuestRegisters))
 		return;
+
+	bool handled = false;
+
+	switch ((UINT32)pGuestRegisters->rax)
+	{
+	case GUEST_CALL_VMM_VTXCALL_FUNCTION:
+	{
+		switch ((UINT32)pGuestRegisters->rcx)
+		{
+		case EXIT_VTX_VTXCALL_SUBFUNCTION:
+		{
+			handled = true;
+
+			JumpToNextInstruction(pGuestRegisters->rip);
+
+			//如果不是从内核模式调用退出则忽略
+			if (!IsKernelAddress((PVOID)pGuestRegisters->rip))
+				break;
+
+			PTR_TYPE value = 0;
+			__vmx_vmread(VM_EXIT_INSTRUCTION_LEN, &value);
+
+			//通过
+			//设置pGuestRegisters->extraInfo1为&pVMMVirtCpuInfo->regsBackup.genericRegisters1 和 
+			//设置pGuestRegisters->extraInfo2为pVMMVirtCpuInfo->guestVmcb.controlFields.nRip
+			//告知_run_svm_vmrun退出vmm
+			pGuestRegisters->extraInfo1 = (UINT64)&pVMMVirtCpuInfo->regsBackup.genericRegisters1;
+
+			__vmx_off();
+
+			__writecr0(pVMMVirtCpuInfo->regsBackup.originCr0);
+			__writecr4(pVMMVirtCpuInfo->regsBackup.originCr4);
+
+			break;
+		}
+		case IS_IN_VTX_VTXCALL_SUBFUNCTION:
+		{
+			handled = true;
+
+			JumpToNextInstruction(pGuestRegisters->rip);
+
+			*reinterpret_cast<UINT32*>(&pGuestRegisters->rax) = 'IN';
+			*reinterpret_cast<UINT32*>(&pGuestRegisters->rbx) = 'TEL';
+			*reinterpret_cast<UINT32*>(&pGuestRegisters->rcx) = 'VTX';
+
+			break;
+		}
+		default:
+			break;
+		}
 	}
 	}
+
+	if (handled)
+		return;
+
+	__debugbreak();
+	KeBugCheck(MANUALLY_INITIATED_CRASH);
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_MsrReadHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	ULONG32 msrNum = (ULONG32)pGuestRegisters->rcx;
+
+	if (pMsrInterceptPlugin != NULL && pMsrInterceptPlugin->HandleMsrImterceptRead(pVMMVirtCpuInfo, pGuestRegisters, msrNum))
+		return;
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+
+	LARGE_INTEGER msrValue = { 0 };
+
+	switch (msrNum)
+	{
+	case IA32_MSR_FS_BASE:
+	{
+		__vmx_vmread(GUEST_FS_BASE, (size_t*)&msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_GS_BASE:
+	{
+		__vmx_vmread(GUEST_GS_BASE, (size_t*)&msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_PAT:
+	{
+		__vmx_vmread(GUEST_IA32_PAT, (size_t*)&msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_EFER:
+	{
+		__vmx_vmread(GUEST_IA32_EFER, (size_t*)&msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_SYSENTER_CS:
+	{
+		__vmx_vmread(GUEST_SYSENTER_CS, (size_t*)&msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_SYSENTER_EIP:
+	{
+		__vmx_vmread(GUEST_SYSENTER_EIP, (size_t*)&msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_SYSENTER_ESP:
+	{
+		__vmx_vmread(GUEST_SYSENTER_ESP, (size_t*)&msrValue.QuadPart);
+		break;
+	}
+	// Report VMX as locked
+	case IA32_MSR_FEATURE_CONTROL:
+	{
+		msrValue.QuadPart = __readmsr(msrNum);
+		PIA32_FEATURE_CONTROL_MSR pMSR = (PIA32_FEATURE_CONTROL_MSR)&msrValue.QuadPart;
+		pMSR->Fields.EnableVTXon = FALSE;
+		pMSR->Fields.Lock = TRUE;
+		break;
+	}
+	default:
+	{
+		msrValue.QuadPart = __readmsr(msrNum);
+		break;
+	}
+	}
+	*reinterpret_cast<UINT32*>(&pGuestRegisters->rax) = msrValue.LowPart;
+	*reinterpret_cast<UINT32*>(&pGuestRegisters->rdx) = msrValue.HighPart;
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_MsrWriteHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	ULONG32 msrNum = (ULONG32)pGuestRegisters->rcx;
+
+	if (pMsrInterceptPlugin != NULL && pMsrInterceptPlugin->HandleMsrInterceptWrite(pVMMVirtCpuInfo, pGuestRegisters, msrNum))
+		return;
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+
+	LARGE_INTEGER msrValue = { 0 };
+
+	msrValue.LowPart = (ULONG32)pGuestRegisters->rax;
+	msrValue.HighPart = (ULONG32)pGuestRegisters->rdx;
+
+	switch (msrNum)
+	{
+	case IA32_MSR_FS_BASE:
+	{
+		__vmx_vmwrite(GUEST_FS_BASE, msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_GS_BASE:
+	{
+		__vmx_vmwrite(GUEST_GS_BASE, msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_PAT:
+	{
+		__vmx_vmwrite(GUEST_IA32_PAT, msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_EFER:
+	{
+		__vmx_vmwrite(GUEST_IA32_EFER, msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_SYSENTER_CS:
+	{
+		__vmx_vmwrite(GUEST_SYSENTER_CS, msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_SYSENTER_EIP:
+	{
+		__vmx_vmwrite(GUEST_SYSENTER_EIP, msrValue.QuadPart);
+		break;
+	}
+	case IA32_MSR_SYSENTER_ESP:
+	{
+		__vmx_vmwrite(GUEST_SYSENTER_ESP, msrValue.QuadPart);
+		break;
+	}
+
+	case IA32_MSR_VTX_BASIC:
+	case IA32_MSR_VTX_PINBASED_CTLS:
+	case IA32_MSR_VTX_PROCBASED_CTLS:
+	case IA32_MSR_VTX_EXIT_CTLS:
+	case IA32_MSR_VTX_ENTRY_CTLS:
+	case IA32_MSR_VTX_MISC:
+	case IA32_MSR_VTX_CR0_FIXED0:
+	case IA32_MSR_VTX_CR0_FIXED1:
+	case IA32_MSR_VTX_CR4_FIXED0:
+	case IA32_MSR_VTX_CR4_FIXED1:
+	case IA32_MSR_VTX_VMCS_ENUM:
+	case IA32_MSR_VTX_PROCBASED_CTLS2:
+	case IA32_MSR_VTX_EPT_VPID_CAP:
+	case IA32_MSR_VTX_TRUE_PINBASED_CTLS:
+	case IA32_MSR_VTX_TRUE_PROCBASED_CTLS:
+	case IA32_MSR_VTX_TRUE_EXIT_CTLS:
+	case IA32_MSR_VTX_TRUE_ENTRY_CTLS:
+	case IA32_MSR_VTX_VMFUNC:
+		break;
+
+	default:
+		__writemsr(msrNum, msrValue.QuadPart);
+	}
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_EptViolationHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	if (pEptVInterceptPlugin != NULL && pEptVInterceptPlugin->HandleEptViolation(pVMMVirtCpuInfo, pGuestRegisters))
+		return;
+
+	__debugbreak();
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_MtfHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	if (pMTFInterceptPlugin != NULL && pMTFInterceptPlugin->HandleMTF(pVMMVirtCpuInfo, pGuestRegisters))
+		return;
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+
+	__debugbreak();
+	KeBugCheck(MANUALLY_INITIATED_CRASH);
+
+	
+}
+
+#pragma code_seg()
+void VTXManager::VmExit_InveptHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	if (pMTFInterceptPlugin != NULL && pMTFInterceptPlugin->HandleMTF(pVMMVirtCpuInfo, pGuestRegisters))
+		return;
+
+	JumpToNextInstruction(pGuestRegisters->rip);
+
+	EPT_CTX ctx = {};
+	_invept(INV_ALL_CONTEXTS, &ctx);
+}
+
+#pragma code_seg()
+void VTXManager::VmExitHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
+{
+	UNREFERENCED_PARAMETER(pVMMVirtCpuInfo);
+
+	PTR_TYPE exitReason = 0;
+	__vmx_vmread(VM_EXIT_REASON, &exitReason);
+
+	(this->*exitHandler[exitReason])(pVMMVirtCpuInfo, pGuestRegisters);
 
 	if (pGuestRegisters->rflags & (1ULL << EFLAGS_TF_OFFSET))
 	{

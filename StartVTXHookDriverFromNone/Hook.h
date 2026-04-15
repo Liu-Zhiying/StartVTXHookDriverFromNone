@@ -205,11 +205,9 @@ NTSTATUS MsrHookManager<msrHookCount>::Init()
 	return status;
 }
 
-#pragma code_seg("PAGE")
 template <SIZE_TYPE msrHookCount>
 void MsrHookManager<msrHookCount>::Deinit()
 {
-	PAGED_CODE();
 	if (inited)
 	{
 		auto coreAction = [this](UINT32 coreIndex) -> NTSTATUS
@@ -777,7 +775,6 @@ public:
 	KernelVector<SmallPageRecord, HOOK_TAG> smallPageRecord;
 	KernelVector<SwapPageRecord, HOOK_TAG> swapPageRecord;
 	KernelVector<EptHookRecord, HOOK_TAG> hookRecords;
-	EptHookStatus hookStatus;
 
 	//通过hook的原始虚拟地址查找记录（HookRecord）
 	SIZE_TYPE FindHookRecordByOriginVirtAddr(PTR_TYPE pOriginAddr) const;

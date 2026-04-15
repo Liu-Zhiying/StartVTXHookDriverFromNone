@@ -16,6 +16,7 @@
 extern "C" {
 	#include <xed/xed-interface.h>
 }
+#include "KernelDpcWorker.h"
 
 //一些类型别名
 typedef unsigned char UINT8;
@@ -33,6 +34,8 @@ typedef UINT64 PTR_TYPE;
 typedef UINT32 SIZE_TYPE;
 typedef UINT32 PTR_TYPE;
 #endif
+
+constexpr UINT32 BIC_TAG = 'bics';
 
 //设置tag
 #define C_TO_U32(c) ((UINT32)(c))
@@ -59,36 +62,27 @@ void CallDestroyer(T* pObj)
 }
 
 //在每一个CPU核心上都运行一次指定的可执行对象
-#pragma code_seg("PAGE")
+#pragma code_seg()
 template<typename Func, typename ...Args>
 NTSTATUS RunOnEachCore(UINT32 startCoreIdx, UINT32 endCoreIdx, Func&& func, Args&& ...args)
 {
-	PAGED_CODE();
-	NTSTATUS status = STATUS_SUCCESS;
-	PROCESSOR_NUMBER processorNum = {};
-	GROUP_AFFINITY affinity = {}, oldAffinity = {};
+	KernelVector<NTSTATUS, BIC_TAG, NonPaged> results;
+	KernelVector<KernelDpcWorker, BIC_TAG, NonPaged> dpcs;
 
-	for (UINT32 cpuIdx = startCoreIdx; cpuIdx < endCoreIdx; ++cpuIdx)
+	dpcs.SetCapacity(endCoreIdx - startCoreIdx);
+	results.SetCapacity(endCoreIdx - startCoreIdx);
+
+	for (UINT32 index = startCoreIdx; index < endCoreIdx; ++index)
 	{
-		status = KeGetProcessorNumberFromIndex(cpuIdx, &processorNum);
-		if (!NT_SUCCESS(status))
-			break;
+		dpcs.EmplaceBack(static_cast<KernelDpcWorker&&>(KernelDpcWorkerFactory::CreateKernelDpcWorker(index, func, index, args...)));
+		while (!dpcs[index].ExecuteIsEnd()) continue;
+		results[index] = (NTSTATUS)dpcs[index].GetReturnValue();
 
-		affinity = {};
-		affinity.Group = processorNum.Group;
-		affinity.Mask = 1ULL << processorNum.Number;
-
-		KeSetSystemGroupAffinityThread(&affinity, &oldAffinity);
-
-		status = func(cpuIdx, args...);
-
-		KeRevertToUserGroupAffinityThread(&oldAffinity);
-
-		if (!NT_SUCCESS(status))
-			break;
+		if (!NT_SUCCESS(results[index]))
+			return results[index];
 	}
 
-	return status;
+	return STATUS_SUCCESS;
 }
 
 //对于驱动各个组件的一个抽象

@@ -3,6 +3,7 @@
 
 #include "Basic.h"
 #include "VMCS.h"
+#include "VTX.h"
 
 // 传入 #VMEXIT 处理函数，用于处理修改guest寄存器状态
 // 也用于 进入虚拟化前后的寄存器备份和恢复
@@ -258,6 +259,94 @@ class VTXManager : public IManager
 	bool enableSce;
 
 	friend void VmExitHandler(VirtCpuInfo* pVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_MtfHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_InveptHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_EptViolationHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_MsrWriteHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_MsrReadHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_EptMisconfigHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_ExceptionNmiHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_TripleFaultHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_CpuidHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_RdtscHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_CrAccessHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_VmcallHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_WbinvdHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_XsetbwHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_RdtscpHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExit_NmiWindowHandler(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+
+	using PExitHandler = void (VTXManager::*)(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+
+	static inline PExitHandler exitHandler[66] =
+	{
+		&VmExit_ExceptionNmiHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_TripleFaultHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_CpuidHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_WbinvdHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_RdtscHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_VmcallHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_CrAccessHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_MsrReadHandler,
+		& VmExit_MsrWriteHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_MtfHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_EptViolationHandler,
+		& VmExit_EptMisconfigHandler,
+		& VmExit_InveptHandler,
+		& VmExit_RdtscpHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_WbinvdHandler,
+		& VmExit_XsetbwHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler,
+		& VmExit_NmiWindowHandler
+	};
 
 public:
 	NTSTATUS EnterVirtualization();

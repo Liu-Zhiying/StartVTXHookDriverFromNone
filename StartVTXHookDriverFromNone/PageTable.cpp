@@ -540,10 +540,9 @@ bool PageTableManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegi
 	return result;
 }
 
-#pragma code_seg("PAGE")
+#pragma code_seg()
 PVOID PageTableManager::GetEptpForCore(UINT32 cpuIdx)
 {
-	PAGED_CODE();
 	const CoreEptPageTableManager* pageTables = GetCoreEptPageTables();
 	SIZE_TYPE cnt = GetCoreEptPageTablesCnt();
 	if (cpuIdx >= cnt)

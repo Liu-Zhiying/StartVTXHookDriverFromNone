@@ -167,7 +167,7 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 	EPT_VIOLATION_DATA info = {};
 	__vmx_vmread(EXIT_QUALIFICATION, &info.AsUInt64);
 
-	if (info.Fields.PTERead && info.Fields.Execute)
+	if (info.AsUInt64 & 0x4)
 	{
 		//通过修改执行权限实现hook，默认hook页面禁止执行，如果执行了hook页表，改为执行的hook页面允许执行，其他页面允许执行，执行出hook页面之后再恢复默认
 
@@ -178,52 +178,22 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 		//获取CPU IDX
 		UINT32 cpuIdx = pVirtCpuInfo->otherInfo.cpuIdx;
 
-		//获取核心EPT HOOK状态
-		EptHookStatus& hookStatus = hookData[cpuIdx].hookStatus;
-
 		//获取对应的核心页表管理器
 		CoreEptPageTableManager& externalCorePageTableManager = pageTableManager1.GetCoreEptPageTables()[cpuIdx];
 		CoreEptPageTableManager& internalCorePageTableManager = pageTableManager2.GetCoreEptPageTables()[cpuIdx];
 
 		SIZE_TYPE swapPageIdx = INVALID_INDEX;
-		EptEntry entry = {};
-
 		PTR_TYPE tempPhyAddr = INVALID_ADDR;
-
+		 
 		EptHookData& data = hookData[cpuIdx];
 
 		EPT_TABLE_POINTER EPTP = {};
-
-		if (hookStatus.pLastActiveHookPageVirtAddr != NULL)
-		{
-			//根据虚拟地址查询交换页项目
-			swapPageIdx = data.FindSwapPageRefCntByOriginVirtAddr(hookStatus.pLastActiveHookPageVirtAddr);
-
-			if (swapPageIdx != INVALID_INDEX)
-			{
-				//恢复上次hook页面为禁止执行
-				entry.fields.readAccess = true;
-				entry.fields.writeAccess = true;
-				entry.fields.executeAccess = false;
-
-				tempPhyAddr = data.swapPageRecord[swapPageIdx].pOriginPhyAddr;
-
-				internalCorePageTableManager.ChangePageTableEntryPermession(tempPhyAddr, entry, 1);
-			}
-		}
-
+		
 		//查询发生错误的页面是否为HOOK页面
 		swapPageIdx = data.FindSwapPageRefCntByOriginPhyAddr(pa.QuadPart & 0xFFFFFFFFFF000);
 
 		if (swapPageIdx != INVALID_INDEX)
 		{
-			//设置hook页面可执行
-			entry.fields.readAccess = true;
-			entry.fields.writeAccess = true;
-			entry.fields.executeAccess = true;
-
-			internalCorePageTableManager.ChangePageTableEntryPermession(pa.QuadPart, entry, 1);
-
 			//切换到内部页表
 			tempPhyAddr = internalCorePageTableManager.GetEptPageTablePa();
 
@@ -232,10 +202,6 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			EPTP.Fields.MemoryType = VTX_MEM_TYPE_UNCACHEABLE;
 
 			__vmx_vmwrite(EPT_POINTER, EPTP.AsUInt64);
-
-			//更新状态
-			hookStatus.pLastActiveHookPageVirtAddr = (PTR_TYPE)data.swapPageRecord[swapPageIdx].pOriginVirtAddr;
-			hookStatus.premissionStatus = EptHookStatus::PremissionStatus::HookPageExecuted;
 		}
 		else
 		{
@@ -247,10 +213,6 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			EPTP.Fields.MemoryType = VTX_MEM_TYPE_UNCACHEABLE;
 
 			__vmx_vmwrite(EPT_POINTER, EPTP.AsUInt64);
-
-			//更新状态
-			hookStatus.pLastActiveHookPageVirtAddr = NULL;
-			hookStatus.premissionStatus = EptHookStatus::PremissionStatus::HookPageNotExecuted;
 		}
 
 		EPT_CTX ctx = {};
@@ -447,15 +409,14 @@ NTSTATUS EptHookManager::AddHookInSignleCore(const EptHookRecord& record, UINT32
 
 		permission.fields.readAccess = true;
 		permission.fields.writeAccess = true;
+		permission.fields.executeAccess = true;
+
+		corePageTableManager2.ChangePageTableEntryPermession(pOriginPhyAddr, permission, 1);
+
 		permission.fields.executeAccess = false;
 
 		corePageTableManager1.ChangePageTableEntryPermession(pOriginPhyAddr, permission, 1);
 	}
-
-	MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(GetSignletonMtrrData());
-
-	corePageTableManager1.UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
-	corePageTableManager2.UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
 
 	return status;
 }
@@ -569,9 +530,6 @@ NTSTATUS EptHookManager::RemoveHookInSignleCore(PVOID pHookOriginVirtAddr, UINT3
 
 	} while (false);
 
-	corePageTableManager1.UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
-	corePageTableManager2.UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
-
 	return status;
 }
 
@@ -609,11 +567,9 @@ bool EptHookManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, GenericR
 	return false;
 }
 
-#pragma code_seg("PAGE")
+#pragma code_seg()
 NTSTATUS EptHookManager::AddHook(const EptHookRecord& record)
 {
-	PAGED_CODE();
-
 	auto processor = [&record, this](UINT32 cpuIdx) -> NTSTATUS
 		{
 			return AddHookInSignleCore(record, cpuIdx);
@@ -624,10 +580,10 @@ NTSTATUS EptHookManager::AddHook(const EptHookRecord& record)
 			return RemoveHookInSignleCore(record.pOriginVirtAddr, cpuIdx);
 		};
 
-	NTSTATUS status = RunOnEachCore(0, KeQueryMaximumProcessorCountEx(ALL_PROCESSOR_GROUPS), processor);
+	NTSTATUS status = RunOnEachCore(0, KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS), processor);
 
 	if (!NT_SUCCESS(status))
-		RunOnEachCore(0, KeQueryMaximumProcessorCountEx(ALL_PROCESSOR_GROUPS), rollbacker);
+		RunOnEachCore(0, KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS), rollbacker);
 
 	EPT_CTX ctx = {};
 	_invept(INV_ALL_CONTEXTS, &ctx);
@@ -635,17 +591,15 @@ NTSTATUS EptHookManager::AddHook(const EptHookRecord& record)
 	return NT_SUCCESS(status) ? status : STATUS_UNSUCCESSFUL;
 }
 
-#pragma code_seg("PAGE")
+#pragma code_seg()
 NTSTATUS EptHookManager::RemoveHook(PVOID pHookOriginVirtAddr)
 {
-	PAGED_CODE();
-
 	auto processor = [pHookOriginVirtAddr, this](UINT32 cpuIdx) -> NTSTATUS
 		{
 			return RemoveHookInSignleCore(pHookOriginVirtAddr, cpuIdx);
 		};
 
-	NTSTATUS status = RunOnEachCore(0, KeQueryMaximumProcessorCountEx(ALL_PROCESSOR_GROUPS), processor);
+	NTSTATUS status = RunOnEachCore(0, KeQueryActiveProcessorCountEx(ALL_PROCESSOR_GROUPS), processor);
 
 	EPT_CTX ctx = {};
 	_invept(INV_ALL_CONTEXTS, &ctx);
@@ -688,11 +642,12 @@ NTSTATUS EptHookManager::Init()
 	{
 		CoreEptPageTableManager& pCoreEptPageTableManager = pageTableManager2.GetCoreEptPageTables()[idx];
 
-		pCoreEptPageTableManager.ChangeAllEndLevelPageTablePermession(permission);;
+		pCoreEptPageTableManager.ChangeAllEndLevelPageTablePermession(permission);
 	}
 
 	//设置新的默认权限为不可执行，因为接下来的修改基本都是最底层页表的修改
 	pageTableManager2.SetDefaultPermission(permission.data, 1);
+	pageTableManager2.SetDefaultPermission(permission.data, 2);
 
 	return STATUS_SUCCESS;
 }
