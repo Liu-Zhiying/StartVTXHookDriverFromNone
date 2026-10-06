@@ -785,6 +785,8 @@ NTSTATUS VTXManager::Init()
 	NTSTATUS status = STATUS_SUCCESS;
 	UINT32 idx = 0;
 
+	cpuCnt = 0;
+
 	do
 	{
 		//检查是否支持AMD-V
@@ -889,12 +891,18 @@ void VTXManager::Deinit()
 
 		for (SIZE_TYPE idx = 0; idx < cpuCnt; ++idx)
 		{
-			FreeNonPagedMem(pVirtCpuInfo[idx], SVM_TAG);
-			pVirtCpuInfo[idx] = NULL;
+			if (pVirtCpuInfo[idx] != NULL)
+			{
+				FreeNonPagedMem(pVirtCpuInfo[idx], SVM_TAG);
+				pVirtCpuInfo[idx] = NULL;
+			}
 		}
-		FreeNonPagedMem(pVirtCpuInfo, SVM_TAG);
-		pVirtCpuInfo = NULL;
-		cpuCnt = 0;
+		if (pVirtCpuInfo != NULL)
+		{
+			FreeNonPagedMem(pVirtCpuInfo, SVM_TAG);
+			pVirtCpuInfo = NULL;
+			cpuCnt = 0;
+		}
 	}
 	msrPremissionMap.Deinit();
 }
@@ -974,6 +982,9 @@ NTSTATUS VTXManager::EnterVirtualization()
 	UINT64 vnExitControlsRealValue = adjustVTXValue(vmExitCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_EXIT_CTLS) : __readmsr(IA32_MSR_VTX_EXIT_CTLS));
 
 	UINT64 vmSecondaryVmExecControlsRealValue = adjustVTXValue(vmCpuCtl2Requested.AsUInt32, __readmsr(IA32_MSR_VTX_PROCBASED_CTLS2));
+
+	//去掉 VE 避免 EPT-violation 发送给客户机
+	vmSecondaryVmExecControlsRealValue &= 0xFFFBFFFF;
 
 	UINT64 vmCpuBasedVmExecControlsRealValue = adjustVTXValue(vmCpuCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PROCBASED_CTLS) : __readmsr(IA32_MSR_VTX_PROCBASED_CTLS));
 

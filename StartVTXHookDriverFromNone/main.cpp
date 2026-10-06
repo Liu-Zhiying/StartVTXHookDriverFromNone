@@ -18,17 +18,17 @@ void UnloadDriver(IN PDRIVER_OBJECT drvObj)
 	PDEVICE_OBJECT devObj = drvObj->DeviceObject;
 	if (devObj != NULL)
 	{
+		GlobalManager* pGlobalManager = (GlobalManager*)drvObj->DeviceObject->DeviceExtension;
+		CallDestroyer(pGlobalManager);
+		CallDestroyer(&GetSignletonMtrrMemoryTypeCache());
+		CallDestroyer(&GetSignletonMtrrData());
+
 		UNICODE_STRING symLinkName;
 		RtlInitUnicodeString(&symLinkName, L"\\DosDevices\\VTXDriver");
-		GlobalManager* pGlobalManager = (GlobalManager*)drvObj->DeviceObject->DeviceExtension;
 		//如果你在DriverEntry里面调用IoCreateSymbolicLink的话加上这句
 		//因为你在DriverEntry里面使用的常量跟着DriverEntry一起卸载了
 		IoDeleteSymbolicLink(&symLinkName);
 		IoDeleteDevice(devObj);
-		CallDestroyer(pGlobalManager);
-
-		CallDestroyer(&GetSignletonMtrrMemoryTypeCache());
-		CallDestroyer(&GetSignletonMtrrData());
 	}
 	KdPrint(("VT-X driver has exited\n"));
 }

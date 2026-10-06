@@ -32,6 +32,10 @@ P_ZwClose pFunctionCaller3 = NULL;
 #pragma code_seg()
 PVOID NTAPI ExAllocatePoolWithTagHandler(POOL_TYPE PoolType, SIZE_T NumberOfBytes, ULONG Tag)
 {
+	__debugbreak();
+
+	KdPrint(("aaaa\n"));
+
 	PVOID result = pFunctionCaller1(PoolType, NumberOfBytes, Tag);
 
 	return result;
@@ -40,6 +44,10 @@ PVOID NTAPI ExAllocatePoolWithTagHandler(POOL_TYPE PoolType, SIZE_T NumberOfByte
 #pragma code_seg()
 PVOID NTAPI ExAllocatePool2Handler(POOL_FLAGS Flags, SIZE_T NumberOfBytes, ULONG Tag)
 {	
+	__debugbreak();
+
+	KdPrint(("bbbb\n"));
+
 	PVOID result = pFunctionCaller2(Flags, NumberOfBytes, Tag);
 
 	return result;
@@ -106,8 +114,6 @@ void GlobalManager::HookApi()
 	//Ö´ÐÐhook
 	EptHookRecord record = {};
 
-	
-
 	if (apiVirtAddr1 != NULL)
 	{
 		pFunctionCaller1 = (P_ExAllocatePoolWithTag)functionCallerManager.GetFunctionCaller(apiVirtAddr1);
@@ -117,7 +123,7 @@ void GlobalManager::HookApi()
 
 		eptHookManager.AddHook(record);
 
-		KdPrint(("Hook ExAllocatePoolWithTag OK!\n"));
+		KdPrint(("Hook ExAllocatePoolWithTag OK, Address of pFunctionCaller1 = %p!\n", &pFunctionCaller1));
 	}
 
 	if (apiVirtAddr2 != NULL)
@@ -129,7 +135,7 @@ void GlobalManager::HookApi()
 
 		eptHookManager.AddHook(record);
 
-		KdPrint(("Hook ExAllocatePool2 OK!\n"));
+		KdPrint(("Hook ExAllocatePool2 OK, Address of pFunctionCaller2 = %p!\n", &pFunctionCaller2));
 	}
 
 	/*

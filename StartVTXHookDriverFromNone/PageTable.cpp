@@ -503,7 +503,10 @@ bool PageTableManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegi
 			if (data.Fields.Read)
 				entry.fields.readAccess = true;
 			if (data.Fields.Execute)
-				entry.fields.executeAccess = true;
+			{
+				entry.fields.executeAccess = true; 
+				entry.fields.userModeExecute = true;
+			}
 		};
 
 		auto getEptEntry = [&](const PTR_TYPE pa) -> EptEntry*
@@ -877,11 +880,14 @@ void CoreEptPageTableManager::Deinit()
 		level1Records.Clear();
 
 		//LEVEL 4 页表释放
-		FreeNonPagedMem((PVOID)pEptPageTableVa, PT_TAG);
+		if (pEptPageTableVa != INVALID_ADDR)
+		{
+			FreeNonPagedMem((PVOID)pEptPageTableVa, PT_TAG);
 
-		//置空
-		pEptPageTableVa = INVALID_ADDR;
-		pEptPageTablePa = INVALID_ADDR;
+			//置空
+			pEptPageTableVa = INVALID_ADDR;
+			pEptPageTablePa = INVALID_ADDR;
+		}
 	}
 }
 
@@ -927,6 +933,8 @@ NTSTATUS PageTableManager::Init()
 	PAGED_CODE();
 	NTSTATUS status = STATUS_SUCCESS;
 
+	pageTableCnt = 0;
+
 	do
 	{
 		if (corePageTables == NULL)
@@ -967,15 +975,18 @@ NTSTATUS PageTableManager::Init()
 void PageTableManager::Deinit()
 {
 	PAGED_CODE();
-	if (corePageTables != NULL)
+	if (pageTableCnt)
 	{
 		//释放CoreEptPageTableManager占用的资源
 		for (SIZE_TYPE idx = 0; idx < pageTableCnt; ++idx)
 			CallDestroyer(&corePageTables[idx]);
-		//释放CoreEptPageTableManager本省占用的内存
+		pageTableCnt = 0;
+	}
+	if (corePageTables != NULL)
+	{
+		//释放CoreEptPageTableManager本省占用的内存	
 		FreeNonPagedMem(corePageTables, PT_TAG);
 		//置空成员
 		corePageTables = NULL;
-		pageTableCnt = 0;
 	}
 }
