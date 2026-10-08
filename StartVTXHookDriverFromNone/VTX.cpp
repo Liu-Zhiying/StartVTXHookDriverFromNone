@@ -970,6 +970,16 @@ NTSTATUS VTXManager::EnterVirtualization()
 	vmCpuCtl2Requested.Fields.EnableRDTSCP = TRUE;
 	vmCpuCtl2Requested.Fields.EnableXSAVESXSTORS = TRUE;
 
+	if (features.VPID)
+	{
+		vmCpuCtlRequested.Fields.CR3LoadExiting = TRUE;
+		vmCpuCtl2Requested.Fields.EnableVPID = TRUE;
+	}
+
+	if (pEptpProvider != NULL)
+		vmCpuCtl2Requested.Fields.EnableEPT = TRUE;
+
+
 	auto adjustVTXValue = [](UINT32 originValue, UINT64 adjustValue) -> UINT32
 		{
 			originValue &= ((adjustValue >> 32) & 0xffffffff);
@@ -1000,15 +1010,6 @@ NTSTATUS VTXManager::EnterVirtualization()
 		pParams = (PTR_TYPE*)(pVirtCpuInfo[idx]->stack2 + sizeof pVirtCpuInfo[idx]->stack2 - sizeof(PTR_TYPE));
 		pParams[0] = (PTR_TYPE)&pVirtCpuInfo[idx]->regsBackup.genericRegisters2;
 	}
-
-	if (features.VPID)
-	{
-		vmCpuCtlRequested.Fields.CR3LoadExiting = TRUE;
-		vmCpuCtl2Requested.Fields.EnableVPID = TRUE;
-	}
-
-	if (pEptpProvider != NULL)
-		vmCpuCtl2Requested.Fields.EnableEPT = TRUE;
 
 	auto enterVirtualizationCore = [&](UINT32 cpuIdx) -> NTSTATUS
 		{

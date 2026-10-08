@@ -32,10 +32,6 @@ P_ZwClose pFunctionCaller3 = NULL;
 #pragma code_seg()
 PVOID NTAPI ExAllocatePoolWithTagHandler(POOL_TYPE PoolType, SIZE_T NumberOfBytes, ULONG Tag)
 {
-	__debugbreak();
-
-	KdPrint(("aaaa\n"));
-
 	PVOID result = pFunctionCaller1(PoolType, NumberOfBytes, Tag);
 
 	return result;
@@ -44,10 +40,6 @@ PVOID NTAPI ExAllocatePoolWithTagHandler(POOL_TYPE PoolType, SIZE_T NumberOfByte
 #pragma code_seg()
 PVOID NTAPI ExAllocatePool2Handler(POOL_FLAGS Flags, SIZE_T NumberOfBytes, ULONG Tag)
 {	
-	__debugbreak();
-
-	KdPrint(("bbbb\n"));
-
 	PVOID result = pFunctionCaller2(Flags, NumberOfBytes, Tag);
 
 	return result;

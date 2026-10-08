@@ -455,8 +455,6 @@ NTSTATUS EptHookManager::AddHookInSignleCore(const EptHookRecord& record, UINT32
 		corePageTableManager1.ChangePageTableEntryPermession(pOriginPhyAddr, permission, 1);
 	}
 
-	MtrrMemoryTypeCache cache = GenMtrrMemoryTypeCache(GetSignletonMtrrData());
-
 	corePageTableManager1.UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
 	corePageTableManager2.UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
 
