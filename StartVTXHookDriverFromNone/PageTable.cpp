@@ -165,6 +165,8 @@ NTSTATUS AllocNewPageTable(EntryType* fatherEntry, PageTableRecords& records, PT
 			status = STATUS_INSUFFICIENT_RESOURCES;
 			break;
 		}
+		//清空子页表
+		RtlZeroMemory(pSubTable, sizeof * pSubTable);
 		//返回新页表虚拟地址
 		va = (PTR_TYPE)pSubTable;
 		//获取新页表物理地址
@@ -173,9 +175,6 @@ NTSTATUS AllocNewPageTable(EntryType* fatherEntry, PageTableRecords& records, PT
 		records.PushBack(PageTableRecord((PTR_TYPE)pSubTable, pa));
 		//设置父页表项
 		entrySetter(fatherEntry, GET_PFN_FROM_PHYADDR(pa), false, level);
-		//清空子页表
-		RtlZeroMemory(pSubTable, sizeof * pSubTable);
-
 	} while (false);
 
 	return status;
