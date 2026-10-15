@@ -504,7 +504,6 @@ bool PageTableManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegi
 			if (data.Fields.Execute)
 			{
 				entry.fields.executeAccess = true; 
-				entry.fields.userModeExecute = true;
 			}
 		};
 

@@ -205,7 +205,6 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 				entry.fields.readAccess = true;
 				entry.fields.writeAccess = true;
 				entry.fields.executeAccess = false;
-				entry.fields.userModeExecute = false;
 
 				tempPhyAddr = data.swapPageRecord[swapPageIdx].pOriginPhyAddr;
 
@@ -222,7 +221,6 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			entry.fields.readAccess = true;
 			entry.fields.writeAccess = true;
 			entry.fields.executeAccess = true;
-			entry.fields.userModeExecute = true;
 
 			internalCorePageTableManager.ChangePageTableEntryPermession(pa.QuadPart, entry, 1);
 
@@ -450,7 +448,6 @@ NTSTATUS EptHookManager::AddHookInSignleCore(const EptHookRecord& record, UINT32
 		permission.fields.readAccess = true;
 		permission.fields.writeAccess = true;
 		permission.fields.executeAccess = false;
-		permission.fields.userModeExecute = false;
 
 		corePageTableManager1.ChangePageTableEntryPermession(pOriginPhyAddr, permission, 1);
 	}
@@ -530,14 +527,12 @@ NTSTATUS EptHookManager::RemoveHookInSignleCore(PVOID pHookOriginVirtAddr, UINT3
 				UINT64 entryPermission = pageTableManager2.GetDefaultPermission(2);
 
 				((EptEntry*)&entryPermission)->fields.executeAccess = false;
-				((EptEntry*)&entryPermission)->fields.userModeExecute = false;
 
 				pageTableManager2.SetDefaultPermission(entryPermission, 2);
 
 				corePageTableManager2.UsingSmallPage(swapPagePhyAddr & 0xFFFFFFFFFFE00000, false);
 
 				((EptEntry*)&entryPermission)->fields.executeAccess = true;
-				((EptEntry*)&entryPermission)->fields.userModeExecute = true;
 
 				pageTableManager2.SetDefaultPermission(entryPermission, 2);
 
@@ -558,14 +553,12 @@ NTSTATUS EptHookManager::RemoveHookInSignleCore(PVOID pHookOriginVirtAddr, UINT3
 				UINT64 entryPermission = pageTableManager2.GetDefaultPermission(2);
 
 				((EptEntry*)&entryPermission)->fields.executeAccess = false;
-				((EptEntry*)&entryPermission)->fields.userModeExecute = false;
 
 				pageTableManager2.SetDefaultPermission(entryPermission, 2);
 
 				corePageTableManager2.UsingSmallPage(pOriginPhyAddr & 0xFFFFFFFFFFE00000, false);
 
 				((EptEntry*)&entryPermission)->fields.executeAccess = true;
-				((EptEntry*)&entryPermission)->fields.userModeExecute = true;
 
 				pageTableManager2.SetDefaultPermission(entryPermission, 2);
 

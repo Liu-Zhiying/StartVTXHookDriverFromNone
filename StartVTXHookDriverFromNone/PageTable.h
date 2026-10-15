@@ -420,9 +420,9 @@ public:
 	}
 };
 
-using PageTableRecords3 = PageTableRecordBacket<0x1>;
-using PageTableRecords2 = PageTableRecordBacket<0x10>;
-using PageTableRecords1 = PageTableRecordBacket<0x40>;
+using PageTableRecords3 = PageTableRecordBacket<0x100>;
+using PageTableRecords2 = PageTableRecordBacket<0x200>;
+using PageTableRecords1 = PageTableRecordBacket<0x400>;
 
 class CoreEptPageTableManager;
 
@@ -475,7 +475,6 @@ public:
 		defaultPermissionLevel3.fields.readAccess = true;
 		defaultPermissionLevel3.fields.writeAccess = true;
 		defaultPermissionLevel3.fields.executeAccess = true;
-		defaultPermissionLevel3.fields.userModeExecute = true;
 		defaultPermissionLevel3.fields.memoryType = VTX_MEM_TYPE_UNCACHEABLE;
 
 		defaultPermissionLevel4 = defaultPermissionLevel1 = defaultPermissionLevel2 = defaultPermissionLevel3;

@@ -264,6 +264,92 @@ public:
 	void LeaveVirtualization();
 	//请勿调用该函数，这个函数由VMM自动调用
 	void VmExitHandler(VirtCpuInfo* pVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_ExceptionNmi(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_TripleFault(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Cpuid(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Invd_Wbinvd(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Rdtsc(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_CrAccess(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Rdtscp(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Xsetbv(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Vmcall(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Msrread(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Msrwrite(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_EptViolation(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Mtf(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Invept(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Default1(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+	void VmExitHandler_Default2(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+#pragma data_seg()
+	static inline void (VTXManager::* exitHandlerArray[65])(VirtCpuInfo* pVirtCpuInfo, GenericRegisters* pGuestRegisters) =
+	{
+		& VmExitHandler_ExceptionNmi,
+		& VmExitHandler_Default1,
+		& VmExitHandler_TripleFault,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default1,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Cpuid,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Invd_Wbinvd,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Rdtsc,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Vmcall,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_CrAccess,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Msrread,
+		& VmExitHandler_Msrwrite,
+		& VmExitHandler_Default1,
+		& VmExitHandler_Default1,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Mtf,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default1,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_EptViolation,
+		& VmExitHandler_Default1,
+		& VmExitHandler_Invept,
+		& VmExitHandler_Rdtscp,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Invd_Wbinvd,
+		& VmExitHandler_Xsetbv,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+		& VmExitHandler_Default2,
+	};
+
 #pragma code_seg("PAGE")
 	VTXManager() : pVirtCpuInfo(NULL), cpuCnt(0), pMsrInterceptPlugin(NULL), pCpuIdInterceptPlugin(NULL), pEptVInterceptPlugin(NULL), pEptpProvider(NULL), pBreakpointInterceptPlugin(NULL), pInvalidOpcodeInterceptPlugin(NULL), pSingleStepInterceptPlugin(NULL), enableSce(true), pMsrBackupRestorePlugin(NULL), features({}), pMTFInterceptPlugin(NULL), pVmCallInterreptPlugin(NULL) { PAGED_CODE(); }
 #pragma code_seg("PAGE")
