@@ -275,4 +275,25 @@ _invept Proc
     ret
 _invept Endp
 
+VmExitHandler_Cpuid_asm Proc
+;mov r9, rcx
+mov r10, rdx
+mov ecx, [r10 + 160h]
+mov eax, [r10 + 170h]
+push rax
+cpuid
+mov [r10 + 170h], eax
+mov [r10 + 168h], ebx
+mov [r10 + 160h], ecx
+mov [r10 + 158h], edx
+pop rax
+cmp eax,eax
+jne return
+mov eax, [r10 + 170h]
+and eax, 20h
+mov [r10 + 170h], eax
+return:
+ret
+VmExitHandler_Cpuid_asm Endp
+
 End

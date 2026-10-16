@@ -1325,6 +1325,8 @@ void VTXManager::VmExitHandler_TripleFault(VirtCpuInfo* pVMMVirtCpuInfo, Generic
 	KeBugCheck(MANUALLY_INITIATED_CRASH);
 }
 
+extern "C" inline void VmExitHandler_Cpuid_asm(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters);
+
 #pragma code_seg()
 void VTXManager::VmExitHandler_Cpuid(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegisters* pGuestRegisters)
 {
@@ -1333,16 +1335,7 @@ void VTXManager::VmExitHandler_Cpuid(VirtCpuInfo* pVMMVirtCpuInfo, GenericRegist
 	if (pCpuIdInterceptPlugin != NULL && pCpuIdInterceptPlugin->HandleCpuid(pVMMVirtCpuInfo, pGuestRegisters))
 		return;
 
-	int cpuInfo[4] = {};
-	__cpuidex(cpuInfo, (int)pGuestRegisters->rax, (int)pGuestRegisters->rcx);
-
-	if (pGuestRegisters->rax == 1)
-		cpuInfo[3] &= ~(1U << VTX_BIT_IN_ECX_OFFSET);
-
-	pGuestRegisters->rax = cpuInfo[0];
-	pGuestRegisters->rbx = cpuInfo[1];
-	pGuestRegisters->rcx = cpuInfo[2];
-	pGuestRegisters->rdx = cpuInfo[3];
+	VmExitHandler_Cpuid_asm(pVMMVirtCpuInfo, pGuestRegisters);
 }
 
 #pragma code_seg()
