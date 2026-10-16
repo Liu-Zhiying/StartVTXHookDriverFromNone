@@ -167,7 +167,7 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 	EPT_VIOLATION_DATA info = {};
 	__vmx_vmread(EXIT_QUALIFICATION, &info.AsUInt64);
 
-	//为了提升性能不使用位领，具体的标志位自己计算
+	//为了提升性能不使用位域，具体的标志位自己计算
 	if (!(info.AsUInt64 & 0x38))
 	{
 		result = pageTableManager1.HandleEptViolation(pVirtCpuInfo, pGuestRegisters) &&
