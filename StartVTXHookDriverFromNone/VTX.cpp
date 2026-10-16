@@ -961,7 +961,7 @@ NTSTATUS VTXManager::EnterVirtualization()
 	vmCpuCtl2Requested.Fields.EnableVMFunctions = TRUE;
 
 	//启用无限制客户机模式
-	vmCpuCtl2Requested.AsUInt32 |= (1UL << 31);
+	vmCpuCtl2Requested.Fields.UnrestrictedGuest = TRUE;
 
 	// Enable support for RDTSCP and XSAVES/XRESTORES in the guest. Windows 10
 	// makes use of both of these instructions if the CPU supports it. By using
@@ -992,9 +992,6 @@ NTSTATUS VTXManager::EnterVirtualization()
 	UINT64 vnExitControlsRealValue = adjustVTXValue(vmExitCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_EXIT_CTLS) : __readmsr(IA32_MSR_VTX_EXIT_CTLS));
 
 	UINT64 vmSecondaryVmExecControlsRealValue = adjustVTXValue(vmCpuCtl2Requested.AsUInt32, __readmsr(IA32_MSR_VTX_PROCBASED_CTLS2));
-
-	//去掉 VE 避免 EPT-violation 发送给客户机
-	vmSecondaryVmExecControlsRealValue &= 0xFFFBFFFF;
 
 	UINT64 vmCpuBasedVmExecControlsRealValue = adjustVTXValue(vmCpuCtlRequested.AsUInt32, features.TrueMSRs ? __readmsr(IA32_MSR_VTX_TRUE_PROCBASED_CTLS) : __readmsr(IA32_MSR_VTX_PROCBASED_CTLS));
 

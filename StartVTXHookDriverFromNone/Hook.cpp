@@ -167,7 +167,7 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 	EPT_VIOLATION_DATA info = {};
 	__vmx_vmread(EXIT_QUALIFICATION, &info.AsUInt64);
 
-	if (info.Fields.PTERead && info.Fields.Execute)
+	if (info.Fields.Execute && info.Fields.PTERead)
 	{
 		//通过修改执行权限实现hook，默认hook页面禁止执行，如果执行了hook页表，改为执行的hook页面允许执行，其他页面允许执行，执行出hook页面之后再恢复默认
 
@@ -227,9 +227,7 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			//切换到内部页表
 			tempPhyAddr = internalCorePageTableManager.GetEptPageTablePa();
 
-			EPTP.Fields.PhysAddr = tempPhyAddr >> 12;
-			EPTP.Fields.PageWalkLength = 3;
-			EPTP.Fields.MemoryType = VTX_MEM_TYPE_WRITEBACK;
+			EPTP.AsUInt64 = tempPhyAddr | (3ULL << 3) | VTX_MEM_TYPE_WRITEBACK;
 
 			__vmx_vmwrite(EPT_POINTER, EPTP.AsUInt64);
 
@@ -242,9 +240,7 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			//切换到外部页表
 			tempPhyAddr = externalCorePageTableManager.GetEptPageTablePa();
 
-			EPTP.Fields.PhysAddr = tempPhyAddr >> 12;
-			EPTP.Fields.PageWalkLength = 3;
-			EPTP.Fields.MemoryType = VTX_MEM_TYPE_WRITEBACK;
+			EPTP.AsUInt64 = tempPhyAddr | (3ULL << 3) | VTX_MEM_TYPE_WRITEBACK;
 
 			__vmx_vmwrite(EPT_POINTER, EPTP.AsUInt64);
 

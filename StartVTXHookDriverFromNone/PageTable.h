@@ -420,9 +420,9 @@ public:
 	}
 };
 
-using PageTableRecords3 = PageTableRecordBacket<0x100>;
-using PageTableRecords2 = PageTableRecordBacket<0x200>;
-using PageTableRecords1 = PageTableRecordBacket<0x400>;
+using PageTableRecords3 = PageTableRecordBacket<0xf>;
+using PageTableRecords2 = PageTableRecordBacket<0x3f>;
+using PageTableRecords1 = PageTableRecordBacket<0x7f>;
 
 class CoreEptPageTableManager;
 

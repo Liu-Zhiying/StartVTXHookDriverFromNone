@@ -290,7 +290,9 @@ pop rax
 cmp eax,eax
 jne return
 mov eax, [r10 + 170h]
-and eax, 20h
+mov ebx, 20h
+not ebx
+and eax, ebx
 mov [r10 + 170h], eax
 return:
 ret
