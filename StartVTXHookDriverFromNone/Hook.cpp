@@ -167,7 +167,9 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 	EPT_VIOLATION_DATA info = {};
 	__vmx_vmread(EXIT_QUALIFICATION, &info.AsUInt64);
 
-	if (info.Fields.Execute && info.Fields.PTERead)
+	//为了提升性能不使用位领，具体的标志位自己计算
+
+	if (info.AsUInt64 & 0x4 && info.AsUInt64 & 0x8)
 	{
 		//通过修改执行权限实现hook，默认hook页面禁止执行，如果执行了hook页表，改为执行的hook页面允许执行，其他页面允许执行，执行出hook页面之后再恢复默认
 
@@ -202,9 +204,7 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 			if (swapPageIdx != INVALID_INDEX)
 			{
 				//恢复上次hook页面为禁止执行
-				entry.fields.readAccess = true;
-				entry.fields.writeAccess = true;
-				entry.fields.executeAccess = false;
+				entry.data = 0x6;
 
 				tempPhyAddr = data.swapPageRecord[swapPageIdx].pOriginPhyAddr;
 
@@ -218,9 +218,7 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 		if (swapPageIdx != INVALID_INDEX)
 		{
 			//设置hook页面可执行
-			entry.fields.readAccess = true;
-			entry.fields.writeAccess = true;
-			entry.fields.executeAccess = true;
+			entry.data = 0x7;
 
 			internalCorePageTableManager.ChangePageTableEntryPermession(pa.QuadPart, entry, 1);
 

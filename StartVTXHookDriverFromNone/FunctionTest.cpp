@@ -188,7 +188,7 @@ NTSTATUS GlobalManager::Init()
 		if (!NT_SUCCESS(status))
 			break;
 
-		//HookApi();
+		HookApi();
 
 #elif defined(TEST_MSR_HOOK)
 
