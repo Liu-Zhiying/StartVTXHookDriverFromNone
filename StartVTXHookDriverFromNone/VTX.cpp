@@ -936,8 +936,9 @@ NTSTATUS VTXManager::EnterVirtualization()
 
 	// As we exit back into the guest, make sure to exist in x64 mode as well.
 	vmEnterCtlRequested.Fields.IA32eModeGuest = TRUE;
-	//vmEnterCtlRequested.Fields.LoadIA32_EFER = TRUE;
-	//vmEnterCtlRequested.Fields.LoadIA32_PAT = TRUE;
+	vmEnterCtlRequested.Fields.LoadIA32_EFER = TRUE;
+	vmEnterCtlRequested.Fields.LoadIA32_PAT = TRUE;
+	vmEnterCtlRequested.Fields.LoadDebugControls = TRUE;
 
 	// If any interrupts were pending upon entering the hypervisor, acknowledge
 	// them when we're done. And make sure to enter us in x64 mode at all times
@@ -958,7 +959,7 @@ NTSTATUS VTXManager::EnterVirtualization()
 	//vmCpuCtlRequested.Fields.UseTSCOffseting = TRUE;
 	//vmCpuCtlRequested.Fields.RDTSCExiting = TRUE;
 	vmCpuCtl2Requested.Fields.EnableINVPCID = TRUE;
-	vmCpuCtl2Requested.Fields.EnableVMFunctions = TRUE;
+	//vmCpuCtl2Requested.Fields.EnableVMFunctions = TRUE;
 
 	//启用无限制客户机模式
 	vmCpuCtl2Requested.Fields.UnrestrictedGuest = TRUE;
