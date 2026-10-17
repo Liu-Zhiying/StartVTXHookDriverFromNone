@@ -597,17 +597,19 @@ bool EptHookManager::HandleMsrInterceptWrite(VirtCpuInfo* pVirtCpuInfo, GenericR
 		{
 			(pageTableManager1.GetCoreEptPageTables() + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
 			(pageTableManager2.GetCoreEptPageTables() + pVirtCpuInfo->otherInfo.cpuIdx)->UpdateMemoryType(GetSignletonMtrrData(), GetSignletonMtrrMemoryTypeCache());
+		
+			EPT_TABLE_POINTER EPTP = {};
+
+			__vmx_vmread(EPT_POINTER, &EPTP.AsUInt64);
+
+			EPT_CTX ctx = {};
+
+			ctx.PEPT = EPTP.AsUInt64;
+
+			_invept(INV_SINGLE_CONTEXT, &ctx);
 		}
 
-		EPT_TABLE_POINTER EPTP = {};
-
-		__vmx_vmread(EPT_POINTER, &EPTP.AsUInt64);
-
-		EPT_CTX ctx = {};
-
-		ctx.PEPT = EPTP.AsUInt64;
-
-		_invept(INV_SINGLE_CONTEXT, &ctx);
+		return true;
 	}
 
 	return false;

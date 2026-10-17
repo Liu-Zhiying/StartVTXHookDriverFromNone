@@ -565,24 +565,10 @@ PVOID CoreEptPageTableManager::FindPageTableByPhyAddr(PTR_TYPE guestPa, UINT32 l
 
 	do
 	{
-		if (level >= 4)
-		{
-			result = (PVOID)pEptPageTableVa;
-			break;
-		}
+		tempPa = pEptPageTablePa;
+		tempVa = pEptPageTableVa;
 
-		if (!IsPagePresent(((EptPageTable*)pEptPageTableVa)->entries[pageTableIdx]))
-			break;
-
-		tempPa = GET_PHYADDR_FROM_PFN(((EptPageTable*)pEptPageTableVa)->entries[pageTableIdx].fields.pageFrameNumber);
-		tempVa = level3Records.FindVaFromPa(tempPa);
-
-		if (tempVa == INVALID_ADDR)
-			break;
-		else
-			result = (PVOID)tempVa;
-
-		for (levelIdx = 2; levelIdx >= level; --levelIdx)
+		for (levelIdx = 4; levelIdx >= level; --levelIdx)
 		{
 			pageTableIdx = ((guestPa >> (levelIdx * 9 + 12)) & 0x1ff);
 
@@ -593,12 +579,25 @@ PVOID CoreEptPageTableManager::FindPageTableByPhyAddr(PTR_TYPE guestPa, UINT32 l
 				break;
 
 			tempPa = GET_PHYADDR_FROM_PFN(((EptPageTable*)tempVa)->entries[pageTableIdx].fields.pageFrameNumber);
-			if (levelIdx == 1)
-				tempVa = level1Records.FindVaFromPa(tempPa);
-			else if (levelIdx == 2)
-				tempVa = level2Records.FindVaFromPa(tempPa);
-			else
+			
+			switch (levelIdx)
+			{
+			case 3:
+			{
 				tempVa = level3Records.FindVaFromPa(tempPa);
+				break;
+			}
+			case 2:
+			{
+				tempVa = level2Records.FindVaFromPa(tempPa);
+				break;
+			}
+			case 1:
+			{
+				tempVa = level1Records.FindVaFromPa(tempPa);
+				break;
+			}
+			}
 
 			if (tempVa == INVALID_ADDR)
 				break;

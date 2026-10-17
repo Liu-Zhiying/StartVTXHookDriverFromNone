@@ -199,10 +199,10 @@ return:
 	ret
 _save_or_load_regs Endp
 
-VmEntry Proc Frame
-.pushframe
-.allocstack 18h
-.endprolog
+VmEntry Proc ;Frame
+;.pushframe
+;.allocstack 18h
+;.endprolog
 ;±¸·Ýrax¼Ä´æÆ÷
 mov [rsp + 18h], rax
 mov rax, [rsp]
@@ -211,13 +211,13 @@ mov rax, [rsp + 18h]
 mov rcx, [rsp]
 mov [rcx + 170h], rax
 
-mov rax, rsp
-add rax, 28h
-mov rcx, rax
-mov rdx, [rsp]
-mov r8, [rsp + 10h]
+;mov rax, rsp
+;add rax, 28h
+;mov rcx, rax
+;mov rdx, [rsp]
+;mov r8, [rsp + 10h]
 
-ALLOC_STACK_AND_CALL FillMachineFrame, 28h
+;ALLOC_STACK_AND_CALL FillMachineFrame, 28h
 
 mov rcx, [rsp + 10h]
 mov rdx, [rsp]
@@ -238,13 +238,6 @@ mov rax, [rsp]
 push [rax + 170h]
 pop rax
 vmresume
-
-mov rax, [rsp]
-
-mov rcx, [rsp + 10h]
-mov rdx, [rsp]
-
-ALLOC_STACK_AND_CALL VmExitHandler, 28h
 
 exit_virtualization:
 mov rax, [rsp]
