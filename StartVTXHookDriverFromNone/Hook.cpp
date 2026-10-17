@@ -210,11 +210,18 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 				if (swapPageIdx != INVALID_INDEX)
 				{
 					//恢复上次hook页面为禁止执行
-					entry.data = 0x6;
+					if (data.swapPageRecord[swapPageIdx].pSwapPageEptEntry != NULL)
+					{
+						data.swapPageRecord[swapPageIdx].pSwapPageEptEntry->fields.executeAccess = false;
+					}
+					else
+					{
+						entry.data = 0x6;
 
-					tempPhyAddr = data.swapPageRecord[swapPageIdx].pOriginPhyAddr;
+						tempPhyAddr = data.swapPageRecord[swapPageIdx].pOriginPhyAddr;
 
-					internalCorePageTableManager.ChangePageTableEntryPermession(tempPhyAddr, entry, 1);
+						internalCorePageTableManager.ChangePageTableEntryPermession(tempPhyAddr, entry, 1);
+					}
 				}
 			}
 
@@ -223,11 +230,19 @@ bool EptHookManager::HandleEptViolation(VirtCpuInfo* pVirtCpuInfo, GenericRegist
 
 			if (swapPageIdx != INVALID_INDEX)
 			{
-				//设置hook页面可执行
-				entry.data = 0x7;
+				//恢复上次hook页面为禁止执行
+				if (data.swapPageRecord[swapPageIdx].pSwapPageEptEntry != NULL)
+				{
+					data.swapPageRecord[swapPageIdx].pSwapPageEptEntry->fields.executeAccess = true;
+				}
+				else
+				{
+					entry.data = 0x7;
 
-				internalCorePageTableManager.ChangePageTableEntryPermession(pa.QuadPart, entry, 1);
+					tempPhyAddr = data.swapPageRecord[swapPageIdx].pOriginPhyAddr;
 
+					internalCorePageTableManager.ChangePageTableEntryPermession(tempPhyAddr, entry, 1);
+				}
 				//切换到内部页表
 				tempPhyAddr = internalCorePageTableManager.GetEptPageTablePa();
 
@@ -285,6 +300,7 @@ NTSTATUS EptHookManager::AddHookInSignleCore(const EptHookRecord& record, UINT32
 	UINT8* swapPageVirtAddr = NULL;
 	PTR_TYPE swapPagePhyAddr = INVALID_ADDR;
 	bool needChangePagePermission = false;
+	bool newSwapCntRef = false;
 
 	CoreEptPageTableManager& corePageTableManager1 = pageTableManager1.GetCoreEptPageTables()[idx];
 	CoreEptPageTableManager& corePageTableManager2 = pageTableManager2.GetCoreEptPageTables()[idx];
@@ -352,6 +368,8 @@ NTSTATUS EptHookManager::AddHookInSignleCore(const EptHookRecord& record, UINT32
 			newItem.refCnt = 1;
 
 			swapPagePhyAddr = newItem.pSwapPhyAddr;
+
+			newSwapCntRef = true;
 
 			hookData[idx].swapPageRecord.PushBack(newItem);
 		}
@@ -435,12 +453,25 @@ NTSTATUS EptHookManager::AddHookInSignleCore(const EptHookRecord& record, UINT32
 
 	} while (false);
 
+	swapPageIdx = hookData[idx].FindSwapPageRefCntByOriginVirtAddr(pOriginPageVirtAddr);
+
+	if (NT_SUCCESS(status) && newSwapCntRef)
+	{
+		if (swapPageIdx != INVALID_INDEX)
+		{
+			EptPageTable* pEptTable = (EptPageTable*)corePageTableManager2.FindPageTableByPhyAddr(pOriginPhyAddr, 1);
+			hookData[idx].swapPageRecord[swapPageIdx].pSwapPageEptEntry = &pEptTable->entries[(pOriginPhyAddr >> 12) & 0x1ff];
+		}
+	}
+
 	if (NT_SUCCESS(status) && needChangePagePermission)
 	{
 		EptEntry permission = {};
 
 		//设置页交换
 		corePageTableManager2.SwapSmallPagePpn(pOriginPhyAddr, swapPagePhyAddr, 1);
+
+		
 
 		permission.fields.readAccess = true;
 		permission.fields.writeAccess = true;

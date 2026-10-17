@@ -730,10 +730,12 @@ struct SwapPageRecord
 	PVOID pSwapVirtAddr;
 	//替换页面的物理地址
 	PTR_TYPE pSwapPhyAddr;
+	//交换页面的EPT条目
+	EptEntry* pSwapPageEptEntry;
 	//使用计数
 	PTR_TYPE refCnt = 0;
 #pragma code_seg()
-	SwapPageRecord() : pOriginVirtAddr(NULL), pOriginPhyAddr(INVALID_ADDR), pSwapVirtAddr(NULL), pSwapPhyAddr(INVALID_ADDR), refCnt(0) {}
+	SwapPageRecord() : pOriginVirtAddr(NULL), pOriginPhyAddr(INVALID_ADDR), pSwapVirtAddr(NULL), pSwapPhyAddr(INVALID_ADDR), refCnt(0), pSwapPageEptEntry(NULL) {}
 
 	DEFAULT_NONPAGED_COPY_AND_MOVE_FUNCTION_FOR_CLASS(SwapPageRecord)
 };
