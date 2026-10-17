@@ -706,10 +706,7 @@ NTSTATUS CoreEptPageTableManager::UsingSmallPage(PTR_TYPE phyAddr, bool isUsing)
 				return STATUS_SUCCESS;
 
 			//更改属性值到未映射状态
-			pTargetPageTable->entries[pageTableIdx].fields.readAccess = false;
-			pTargetPageTable->entries[pageTableIdx].fields.writeAccess = false;
-			pTargetPageTable->entries[pageTableIdx].fields.executeAccess = false;
-			pTargetPageTable->entries[pageTableIdx].fields.largePage = false;
+			pTargetPageTable->entries[pageTableIdx].data = 0;
 		}
 		//改大页
 		else

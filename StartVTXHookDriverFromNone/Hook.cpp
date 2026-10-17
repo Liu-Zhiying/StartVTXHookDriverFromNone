@@ -547,6 +547,9 @@ NTSTATUS EptHookManager::RemoveHookInSignleCore(PVOID pHookOriginVirtAddr, UINT3
 			{
 				corePageTableManager1.UsingSmallPage(pOriginPhyAddr & 0xFFFFFFFFFFE00000, false);
 
+				EPT_CTX ctx = {};
+				_invept(INV_ALL_CONTEXTS, &ctx);
+
 				UINT64 entryPermission = pageTableManager2.GetDefaultPermission(2);
 
 				((EptEntry*)&entryPermission)->fields.executeAccess = false;
