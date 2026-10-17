@@ -1401,7 +1401,7 @@ void VTXManager::VmExitHandler_CrAccess(VirtCpuInfo* pVMMVirtCpuInfo, GenericReg
 	MOV_CR_QUALIFICATION data = {};
 	__vmx_vmread(EXIT_QUALIFICATION, (size_t*)&data);
 	PTR_TYPE* regPtr = getRegPtr(*pGuestRegisters, data.Fields.Register);
-	VPID_CTX ctx = {};
+	
 
 	switch (data.Fields.AccessType)
 	{
@@ -1417,6 +1417,8 @@ void VTXManager::VmExitHandler_CrAccess(VirtCpuInfo* pVMMVirtCpuInfo, GenericReg
 		}
 		case 3:
 		{
+			VPID_CTX ctx = {};
+			ctx.VPID = VIRTUAL_CPU_ID(pVMMVirtCpuInfo->otherInfo.cpuIdx);
 
 			PTR_TYPE cr4 = 0;
 			__vmx_vmread(GUEST_CR4, &cr4);
@@ -1425,6 +1427,9 @@ void VTXManager::VmExitHandler_CrAccess(VirtCpuInfo* pVMMVirtCpuInfo, GenericReg
 				*regPtr &= ~(1ull << 63);
 
 			__vmx_vmwrite(GUEST_CR3, *regPtr);
+
+			if (features.VPID)
+				_invvpid(INV_SINGLE_CONTEXT, &ctx);
 			break;
 		}
 		case 4:
@@ -1442,8 +1447,7 @@ void VTXManager::VmExitHandler_CrAccess(VirtCpuInfo* pVMMVirtCpuInfo, GenericReg
 		}
 		}
 
-		if (features.VPID)
-			_invvpid(INV_ALL_CONTEXTS, &ctx);
+		
 
 		break;
 	}
