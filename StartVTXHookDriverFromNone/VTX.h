@@ -521,23 +521,27 @@ UINT32 GetSegmentLimit2(_In_ UINT16 SegmentSelector, _In_ ULONG_PTR GdtBase);
 //一系列汇编函数
 //源代码在SVM_asm.asm里面
 //主要都是寄存器读取操作
-extern "C" void _mysgdt(UINT64* pBase, UINT16* pLImit);
-extern "C" void _mysidt(UINT64* pBase, UINT16* pLImit);
-extern "C" void _mysldt(UINT16* pSelector);
-extern "C" void _mystr(UINT16* pSelector);
-extern "C" UINT16 _cs_selector();
-extern "C" UINT16 _ds_selector();
-extern "C" UINT16 _es_selector();
-extern "C" UINT16 _fs_selector();
-extern "C" UINT16 _gs_selector();
-extern "C" UINT16 _ss_selector();
+extern "C" void inline _mysgdt(UINT64* pBase, UINT16* pLImit);
+extern "C" void inline _mysidt(UINT64* pBase, UINT16* pLImit);
+extern "C" void inline _mysldt(UINT16* pSelector);
+extern "C" void inline _mystr(UINT16* pSelector);
+extern "C" UINT16 inline _cs_selector();
+extern "C" UINT16 inline _ds_selector();
+extern "C" UINT16 inline _es_selector();
+extern "C" UINT16 inline _fs_selector();
+extern "C" UINT16 inline _gs_selector();
+extern "C" UINT16 inline _ss_selector();
 
 //用于备份和还原寄存器上下文
 extern "C" void _save_or_load_regs(GenericRegisters* pRegisters);
 
-extern "C" void _invvpid(IVVPID_TYPE type, PVPID_CTX ctx);
+extern "C" void inline _invvpid(IVVPID_TYPE type, PVPID_CTX ctx);
 
-extern "C" void _invept(INVEPT_TYPE type, PEPT_CTX ctx);
+extern "C" void inline _invept(INVEPT_TYPE type, PEPT_CTX ctx);
+
+extern "C" PTR_TYPE inline _vmread(PTR_TYPE index);
+
+extern "C" void inline _vmwrite(PTR_TYPE index, PTR_TYPE value);
 
 void JumpToNextInstruction(PTR_TYPE& rip);
 

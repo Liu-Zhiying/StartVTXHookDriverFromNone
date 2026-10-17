@@ -291,4 +291,14 @@ return:
 ret
 VmExitHandler_Cpuid_asm Endp
 
+_vmread Proc
+vmread rax, rcx
+ret
+_vmread Endp
+
+_vmwrite Proc
+vmwrite rcx, rdx
+ret
+_vmwrite Endp
+
 End

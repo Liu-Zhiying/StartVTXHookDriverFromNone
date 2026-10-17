@@ -559,8 +559,8 @@ public:
 	void Deinit();
 	NTSTATUS BuildEptPageTable();
 #pragma code_seg()
-	PTR_TYPE GetEptPageTableVa() const { return pEptPageTableVa; }
-	PTR_TYPE GetEptPageTablePa() const { return pEptPageTablePa; }
+	inline PTR_TYPE GetEptPageTableVa() const { return pEptPageTableVa; }
+	inline PTR_TYPE GetEptPageTablePa() const { return pEptPageTablePa; }
 	//通过物理地址也页表级速寻找页表项虚拟地址
 	PVOID FindPageTableByPhyAddr(PTR_TYPE pa, UINT32 level) const;
 	//根据MTRR更新EPT页表的内存类型
