@@ -14,8 +14,8 @@
 #define TEST_EPT_HOOK
 //#define TEST_MSR_HOOK
 
-//ÊÇ·ñ²âÊÔNPT HOOKÉ¾³ý
-//#define TEST_NPT_HOOK_REMOVE
+//ÊÇ·ñ²âÊÔEPT HOOKÉ¾³ý
+#define TEST_EPT_HOOK_REMOVE
 
 class GlobalManager : public IManager
 {

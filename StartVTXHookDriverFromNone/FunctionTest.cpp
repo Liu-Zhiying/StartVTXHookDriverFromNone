@@ -146,9 +146,9 @@ void GlobalManager::HookApi()
 
 	*/
 	
-#if defined(TEST_NPT_HOOK_REMOVE)
-	nptHookManager.RemoveHook(apiVirtAddr1);
-	nptHookManager.RemoveHook(apiVirtAddr2);
+#if defined(TEST_EPT_HOOK_REMOVE)
+	eptHookManager.RemoveHook(apiVirtAddr1);
+	eptHookManager.RemoveHook(apiVirtAddr2);
 #endif
 }
 #endif
